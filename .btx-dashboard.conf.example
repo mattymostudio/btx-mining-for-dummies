@@ -1,0 +1,18 @@
+# BTX Mining Dashboard Config
+# Copy to ~/.btx-dashboard.conf and fill in your values
+# Required by dashboard.sh
+
+# Vast.ai miner instance — update whenever you re-rent
+VAST_HOST=YOUR.VAST.IP.HERE
+VAST_PORT=YOUR_VAST_PORT
+VAST_HOURLY_RATE=0.85
+VAST_START_EPOCH=$(date +%s)   # Or set to actual instance start epoch
+
+# Hetzner wallet/validator node
+HETZNER_HOST=YOUR.HETZNER.IP.HERE
+HETZNER_MONTHLY_RATE=46.49
+HETZNER_START_EPOCH=$(date +%s)  # Or actual server creation epoch
+
+# Don't change these unless you know what you're doing
+BTX_BLOCK_REWARD=20
+NETWORK_TIP_HEIGHT=110000   # Approximate network height; refreshed by API call anyway
