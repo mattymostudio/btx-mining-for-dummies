@@ -13,7 +13,8 @@ Published by [Matty Mo Studio](https://themostfamousartist.com).
 A repo containing:
 - **`CLAUDE_PACKET.md`** — paste this into Claude Code as context. Claude reads it and helps you execute every step, troubleshoots known errors, and stops you before predictable mistakes.
 - **`cloud-node-setup.sh`** — Hetzner CPX41 (Ubuntu 24.04) → BTX validator + wallet host.
-- **`vast-miner-bootstrap.sh`** — Vast.ai GPU instance → CUDA-accelerated BTX miner.
+- **`runpod-bootstrap.sh`** — RunPod Secure Cloud GPU pod → CUDA-accelerated BTX miner. **Recommended** for cloud mining (datacenter SLA, ~$0.40-0.70/hr 4090).
+- **`vast-miner-bootstrap.sh`** — Vast.ai GPU instance → cheaper but less reliable. Use only if RunPod inventory is unavailable.
 - **`garage-rig-setup.sh`** — (optional) owned-hardware setup for those who buy a 5090/4090.
 - **`dashboard.sh`** — local terminal dashboard showing sync state, balance, spend, and break-even.
 
@@ -27,8 +28,9 @@ The packet captures every operational gotcha learned from real deployment — in
 
 **Expected costs:**
 - Hetzner CPX41: **~$46/month** (always-on validator)
-- Vast.ai GPU: **$300-700/month** depending on GPU and uptime
-- **Total: ~$350-750/month**
+- **RunPod Secure 4090** (recommended): **~$240-500/month** (24/7 at $0.34-0.69/hr)
+- *or Vast 4090/5090*: $300-1,500/month (cheaper hourly but **expect 1-3 day MTBF**, frequent re-renting)
+- **Total: ~$300-550/month** on RunPod, ~$350-1,550 on Vast
 
 **Expected outcomes:** Unknown. The [btxprice.com](https://btxprice.com) model projects $1,193/BTX at 12 months — at face value, accumulating even 10-20 BTX would offset a full year of mining cost. But model price ≠ market price, and no market exists yet.
 
@@ -69,15 +71,15 @@ The packet captures every operational gotcha learned from real deployment — in
 
 ```
 ┌──────────────────┐           ┌────────────────────┐
-│  Hetzner CPX41   │ ◄──p2p──► │  Vast.ai GPU node  │
-│  (wallet + node) │           │  (CUDA miner)      │
-│  Always-on       │           │  Replaceable       │
-│  ~$46/mo         │           │  ~$300-700/mo      │
+│  Hetzner CPX41   │ ◄──p2p──► │  RunPod / Vast     │
+│  (wallet + node) │           │  GPU node          │
+│  Always-on       │           │  (CUDA miner)      │
+│  ~$46/mo         │           │  ~$240-700/mo      │
 └──────────────────┘           └────────────────────┘
         │                              │
         └─── mining rewards land ──────┘
              on Hetzner-controlled wallet
-             (Vast can die without losing funds)
+             (GPU node can die without losing funds)
 ```
 
 Plus a local dashboard showing:
@@ -121,7 +123,8 @@ This separation is critical. Single-node setups risk losing accumulated rewards 
 |---|---|---|
 | `CLAUDE_PACKET.md` | The brain — Claude reads this to guide you | Claude Code context |
 | `cloud-node-setup.sh` | Provisions BTX validator + wallet on Hetzner | Hetzner Ubuntu 24.04 |
-| `vast-miner-bootstrap.sh` | Provisions GPU miner on Vast.ai | Vast.ai CUDA container |
+| `runpod-bootstrap.sh` | Provisions GPU miner on RunPod (recommended) | RunPod Secure Cloud pod |
+| `vast-miner-bootstrap.sh` | Provisions GPU miner on Vast.ai (cheaper, less reliable) | Vast.ai CUDA container |
 | `garage-rig-setup.sh` | (Optional) provisions owned-hardware miner | Your own Ubuntu Server |
 | `dashboard.sh` | Live monitoring dashboard | Your laptop |
 

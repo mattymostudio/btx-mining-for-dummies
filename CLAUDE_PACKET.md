@@ -126,7 +126,52 @@ They can close their laptop. The Hetzner server keeps running.
 
 ---
 
-### Phase 2: Vast.ai setup (~30 min, do this AFTER Hetzner is at least 50% synced)
+### Phase 2 — Provider choice: RunPod (recommended) or Vast.ai
+
+⚠️ **Strong recommendation: use RunPod Secure Cloud, not Vast.** Empirical operational data from real BTX miners:
+- **Vast.ai**: 4 of 4 instances failed within 1-3 days (zombie state, "retries exceeded," disk fill, peer-disconnect storms). P2P marketplace means random consumer-grade hosts. Cheaper hourly but you pay it back in babysitting time.
+- **RunPod Secure Cloud**: 99% SLA, Tier 3/4 datacenter hosts, ~1/3 the price of equivalent Vast for 4090 ($0.34-0.69/hr). Crypto-mining not prohibited in TOS.
+
+If you have free Vast credit to burn, use Vast as a *backup* miner alongside RunPod primary. Otherwise skip Vast entirely.
+
+### Phase 2A: RunPod setup (~30 min)
+
+**Account:**
+1. Sign up at runpod.io
+2. Add credit (Settings → Billing). $25-50 to start is plenty.
+3. Settings → SSH Public Keys → add your public key (`cat ~/.ssh/id_ed25519.pub`)
+
+**Find a good pod:**
+
+Filter at runpod.io/console/deploy:
+- **GPU**: RTX 4090 (best $/perf) or RTX 5090 if budget allows
+- **Pricing**: select **"Secure Cloud"** filter, NOT Community Cloud — Community = P2P (same Vast problems)
+- **Image / Template**: search "cuda" → pick `runpod/pytorch:2.x-cuda12.4-devel-ubuntu22.04` (or equivalent with `-devel`)
+- **Container Disk**: 50 GB (using `--preset miner` pruned mode) or 100 GB (full node)
+- **Network Volume** (optional but recommended): attach a 50GB volume — survives pod stop/restart
+
+Click "Deploy."
+
+**Get SSH details:**
+- RunPod console → My Pods → click your pod → Connect → SSH command shown like:
+  ```
+  ssh root@<pod-ip> -p <port> -i ~/.ssh/id_ed25519
+  ```
+
+**Bootstrap:**
+
+```bash
+scp -P <port> /path/to/runpod-bootstrap.sh root@<pod-ip>:/root/
+ssh root@<pod-ip> -p <port>
+export BTX_REWARD_ADDRESS=<from Hetzner setup>
+export BTX_HETZNER_PEER_IP=<your Hetzner public IP>
+export BTX_CUDA_ARCH=89   # or 120 for 5090
+bash /root/runpod-bootstrap.sh
+```
+
+Build takes ~5-10 min. Mining auto-starts when IBD completes (~6-12h).
+
+### Phase 2B: Vast.ai setup (~30 min, do this AFTER Hetzner is at least 50% synced) — OPTIONAL/FALLBACK
 
 **Account:**
 1. Sign up at cloud.vast.ai
@@ -385,7 +430,22 @@ Container Size was set < 100GB at rent time. Solution: destroy and re-rent with 
 `listen=0` in btx.conf can cause peer isolation. Edit btx.conf to `listen=1` and restart btxd.
 
 ### "Vast instance shows 'Running' but SSH/Open both fail"
-Zombie state. Destroy + re-rent on a different host (note the host_id you avoid).
+Zombie state. Destroy + re-rent on a different host (note the host_id you avoid). If this happens repeatedly, **switch to RunPod Secure Cloud** — the Vast P2P marketplace has empirically high failure rates for sustained mining workloads.
+
+### "Vast instance hits 'retries exceeded' after 1-3 days"
+Container infrastructure failure. Vast hosts can't sustain 24/7 100% GPU at high power. Same fix: switch to RunPod Secure Cloud (datacenter Tier 3/4 hosts).
+
+### "Two btxd instances fill 100GB disk"
+Each btxd's full chain state is ~50GB. Two btxd's = >100GB → disk full. Fix: use `--preset miner` for the second btxd, which prunes block storage (~5-10GB per instance). Or rent a pod with 200GB+ disk.
+
+### "Peer count drops to 1 and stays there, peers keep connecting then disconnecting in debug.log"
+Container network layer broken (we hit this on Vast). Peers connect (visible in debug.log as "New peer X connected") but never accumulate in getconnectioncount. Fix: destroy the instance, switch providers.
+
+### "GPU 1 stuck at 100% util / ~115W after btxd died"
+CUDA context not released by dead btxd. Reboot the instance via web UI (kill -9 won't release the GPU context). On owned hardware, `sudo nvidia-smi --gpu-reset` works.
+
+### "Mining supervisor restarts btxd without preserving env vars"
+Mining supervisor calls btxd directly without inheriting `BTX_MATMUL_BACKEND=cuda` or `CUDA_VISIBLE_DEVICES=N`. After supervisor-managed restart, the new btxd may fall back to CPU mining. Workaround: wrap btxd in a launch script that sets env vars, point supervisor at that.
 
 ### "Hetzner wallet not loaded after restart"
 Add `wallet=miner-rewards` to `/home/btx/.btx/btx.conf` to auto-load on startup.
