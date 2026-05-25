@@ -129,7 +129,7 @@ They can close their laptop. The Hetzner server keeps running.
 ### Phase 2 — Provider choice: RunPod (recommended) or Vast.ai
 
 ⚠️ **Strong recommendation: use RunPod Secure Cloud, not Vast.** Empirical operational data from real BTX miners:
-- **Vast.ai**: 4 of 4 instances failed within 1-3 days (zombie state, "retries exceeded," disk fill, peer-disconnect storms). P2P marketplace means random consumer-grade hosts. Cheaper hourly but you pay it back in babysitting time.
+- **Vast.ai**: 5 instances failed across 6 days (zombie state, "retries exceeded," disk fill, stuck CUDA contexts, peer-disconnect storms). P2P marketplace means random consumer-grade hosts. Cheaper hourly but you pay it back in babysitting time.
 - **RunPod Secure Cloud**: 99% SLA, Tier 3/4 datacenter hosts, ~1/3 the price of equivalent Vast for 4090 ($0.34-0.69/hr). Crypto-mining not prohibited in TOS.
 
 If you have free Vast credit to burn, use Vast as a *backup* miner alongside RunPod primary. Otherwise skip Vast entirely.

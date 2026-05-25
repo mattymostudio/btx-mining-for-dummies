@@ -190,9 +190,11 @@ btx-mining-for-dummies/
 ├── CLAUDE_PACKET.md                # the operational packet for Claude
 ├── LICENSE                         # MIT
 ├── cloud-node-setup.sh             # Hetzner validator + wallet
-├── vast-miner-bootstrap.sh         # Vast.ai GPU miner
+├── runpod-bootstrap.sh             # RunPod GPU miner (recommended)
+├── vast-miner-bootstrap.sh         # Vast.ai GPU miner (fallback, less reliable)
 ├── garage-rig-setup.sh             # (optional) owned hardware
-└── dashboard.sh                    # local monitoring
+├── dashboard.sh                    # local monitoring
+└── .btx-dashboard.conf.example     # dashboard config template
 ```
 
-That's it. Five files. Paste the packet into Claude, follow along, mine BTX.
+Paste the packet into Claude, follow along, mine BTX.

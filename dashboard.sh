@@ -6,7 +6,7 @@
 #   watch -n 30 -c 'bash dashboard.sh'   # auto-refresh every 30s
 #
 # Reads config from $HOME/.btx-dashboard.conf if present, else uses defaults
-# below. Edit the conf file when Vast IP/port changes.
+# below. Edit the conf file when your cloud miner's host/port changes.
 
 CONFIG="${HOME}/.btx-dashboard.conf"
 if [[ -f "${CONFIG}" ]]; then
@@ -15,8 +15,11 @@ fi
 
 # Defaults — REQUIRE override in ~/.btx-dashboard.conf
 # Create that file with your own values; see README for example.
+# VAST_* names are historical; the cloud miner is whatever provider VAST_PROVIDER names.
+VAST_PROVIDER="${VAST_PROVIDER:-Cloud}"
 VAST_HOST="${VAST_HOST:-PLACEHOLDER_VAST_IP}"
 VAST_PORT="${VAST_PORT:-22}"
+VAST_SSH_KEY="${VAST_SSH_KEY:-}"                     # path to identity file; empty = default agent
 VAST_HOURLY_RATE="${VAST_HOURLY_RATE:-0.50}"
 VAST_START_EPOCH="${VAST_START_EPOCH:-$(date +%s)}"
 
@@ -38,7 +41,7 @@ fi
 SSH_OPTS="-o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new"
 
 vast_query() {
-  ssh ${SSH_OPTS} -p "${VAST_PORT}" "root@${VAST_HOST}" "$1" 2>/dev/null
+  ssh ${SSH_OPTS} ${VAST_SSH_KEY:+-i "${VAST_SSH_KEY}"} -p "${VAST_PORT}" "root@${VAST_HOST}" "$1" 2>/dev/null
 }
 
 hetzner_query() {
@@ -113,7 +116,7 @@ cat <<EOF
 ║                     BTX MINING DASHBOARD                           ║
 ║                     ${TS}                              ║
 ╠════════════════════════════════════════════════════════════════════╣
-║ MINING (Vast 4090, ${VAST_HOST})
+║ MINING (${VAST_PROVIDER} ${VAST_GPU_LABEL:-GPU}, ${VAST_HOST}:${VAST_PORT})
 ║   Sync          : ${VAST_BLOCKS:-?} / ${VAST_HEADERS:-?} blocks ($(awk -v p="${VAST_PROGRESS:-0}" 'BEGIN{printf "%.1f%%", p*100}'))
 ║   IBD active    : ${VAST_IBD}
 ║   Peers         : ${VAST_PEERS:-?}
@@ -126,7 +129,7 @@ cat <<EOF
 ║   Peers         : ${HET_PEERS:-?}
 ╠════════════════════════════════════════════════════════════════════╣
 ║ SPEND (since ${VAST_START_EPOCH} / ${HETZNER_START_EPOCH})
-║   Vast uptime   : ${VAST_UPTIME_HRS} hrs  @ \$${VAST_HOURLY_RATE}/hr  →  \$${VAST_SPEND}
+║   ${VAST_PROVIDER} uptime : ${VAST_UPTIME_HRS} hrs  @ \$${VAST_HOURLY_RATE}/hr  →  \$${VAST_SPEND}
 ║   Hetzner       : ${HETZNER_UPTIME_HRS} hrs  @ \$${HETZNER_MONTHLY_RATE}/mo  →  \$${HETZNER_SPEND}
 ║   TOTAL SPEND   : \$${TOTAL_SPEND}
 ╠════════════════════════════════════════════════════════════════════╣
@@ -149,7 +152,7 @@ EOF
 
 # Status indicators
 STATUS_LINE=""
-[[ "${VAST_IBD}" == "false" ]] && STATUS_LINE="${STATUS_LINE}🟢 Vast: synced  " || STATUS_LINE="${STATUS_LINE}🟡 Vast: syncing  "
+[[ "${VAST_IBD}" == "false" ]] && STATUS_LINE="${STATUS_LINE}🟢 ${VAST_PROVIDER}: synced  " || STATUS_LINE="${STATUS_LINE}🟡 ${VAST_PROVIDER}: syncing  "
 [[ "${HET_BALANCE:-0}" != "0.00000000" ]] && [[ -n "${HET_BALANCE}" ]] && STATUS_LINE="${STATUS_LINE}🟢 Earning  " || STATUS_LINE="${STATUS_LINE}⚪ No rewards yet  "
 
 echo
