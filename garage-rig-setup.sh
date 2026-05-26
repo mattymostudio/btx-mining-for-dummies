@@ -135,6 +135,20 @@ sudo -u "${BTX_USER}" -H bash -se <<EOF
   cmake --build build -j"\$(nproc)"
 EOF
 
+log "Installing btxd wrapper (CRITICAL — preserves BTX_MATMUL_BACKEND across supervisor restarts)"
+# The mining supervisor STRIPS env vars when it restarts btxd. Without this
+# wrapper, btxd silently falls back to CPU mining after the first chain_guard
+# auto-recovery restart. See retro: see internal retrospective
+sudo -u "${BTX_USER}" mkdir -p "${BTX_SRC}/build/bin-wrapped"
+sudo tee "${BTX_SRC}/build/bin-wrapped/btxd" >/dev/null <<WRAPPER
+#!/bin/bash
+# Auto-installed by garage-rig-setup.sh — sets CUDA env vars then exec's real btxd.
+# Both systemd and supervisor point --daemon at this wrapper so restarts preserve env.
+exec env BTX_MATMUL_BACKEND=cuda CUDA_VISIBLE_DEVICES=0 "${BTX_SRC}/build/bin/btxd" "\$@"
+WRAPPER
+sudo chmod +x "${BTX_SRC}/build/bin-wrapped/btxd"
+sudo chown "${BTX_USER}:${BTX_USER}" "${BTX_SRC}/build/bin-wrapped/btxd"
+
 log "Verifying CUDA backend compiled"
 sudo -u "${BTX_USER}" "${BTX_SRC}/build/bin/btx-matmul-backend-info" --backend cuda | head -15
 
@@ -181,8 +195,11 @@ Wants=network-online.target
 Type=simple
 User=${BTX_USER}
 Environment="BTX_MATMUL_BACKEND=cuda"
+Environment="CUDA_VISIBLE_DEVICES=0"
 WorkingDirectory=${BTX_HOME}
-ExecStart=${BTX_SRC}/build/bin/btxd -datadir=${BTX_DATA} -printtoconsole
+# ExecStart points at wrapper for defense-in-depth — even if systemd env is bypassed,
+# the wrapper sets BTX_MATMUL_BACKEND=cuda before exec'ing btxd.
+ExecStart=${BTX_SRC}/build/bin-wrapped/btxd -datadir=${BTX_DATA} -printtoconsole
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=65536
@@ -205,7 +222,10 @@ Requires=btxd.service
 Type=simple
 User=${BTX_USER}
 Environment="BTX_MINING_CLI=${BTX_SRC}/build/bin/btx-cli"
-Environment="BTX_MINING_DAEMON=${BTX_SRC}/build/bin/btxd"
+# Point supervisor at the wrapper — if it restarts btxd, env is preserved.
+Environment="BTX_MINING_DAEMON=${BTX_SRC}/build/bin-wrapped/btxd"
+Environment="BTX_MATMUL_BACKEND=cuda"
+Environment="CUDA_VISIBLE_DEVICES=0"
 WorkingDirectory=${BTX_SRC}
 ExecStart=${BTX_SRC}/contrib/mining/start-live-mining.sh \\
   --datadir=${BTX_DATA} \\

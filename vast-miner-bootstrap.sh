@@ -112,8 +112,21 @@ chmod 600 /workspace/.btx/btx.conf
 
 # === Start btxd ===
 
-log "Starting btxd with BTX_MATMUL_BACKEND=cuda"
-BTX_MATMUL_BACKEND=cuda nohup /workspace/btx/build/bin/btxd -datadir=/workspace/.btx -daemon
+log "Installing btxd wrapper (CRITICAL — preserves BTX_MATMUL_BACKEND across restarts)"
+# The mining supervisor STRIPS env vars when it restarts btxd. Without this
+# wrapper, btxd silently falls back to CPU mining after the first chain_guard
+# auto-recovery restart. See retro: see internal retrospective
+mkdir -p /workspace/btx/build/bin-wrapped
+cat > /workspace/btx/build/bin-wrapped/btxd <<'WRAPPER'
+#!/bin/bash
+# Auto-installed by vast-miner-bootstrap.sh — sets CUDA env vars then exec's real btxd.
+# Supervisor points --daemon at this wrapper so restarts preserve env.
+exec env BTX_MATMUL_BACKEND=cuda CUDA_VISIBLE_DEVICES=0 /workspace/btx/build/bin/btxd "$@"
+WRAPPER
+chmod +x /workspace/btx/build/bin-wrapped/btxd
+
+log "Starting btxd via wrapper"
+/workspace/btx/build/bin-wrapped/btxd -datadir=/workspace/.btx -daemon
 
 log "Waiting for btxd to be RPC-ready"
 for i in {1..30}; do
@@ -124,14 +137,23 @@ for i in {1..30}; do
 done
 /workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getblockchaininfo | jq '.blocks, .headers'
 
+log "Verifying CUDA env is set on running btxd"
+BTXD_PID=$(pgrep btxd | head -1)
+if [[ -n "$BTXD_PID" ]] && tr '\0' '\n' < /proc/$BTXD_PID/environ 2>/dev/null | grep -q '^BTX_MATMUL_BACKEND=cuda$'; then
+  echo "  ✓ BTX_MATMUL_BACKEND=cuda confirmed in btxd env"
+else
+  echo "  ✗ FATAL: BTX_MATMUL_BACKEND not set on btxd. Wrapper failed."
+  exit 1
+fi
+
 # === Mining supervisor ===
 
-log "Launching mining supervisor (pays to ${BTX_REWARD_ADDRESS})"
+log "Launching mining supervisor (pays to ${BTX_REWARD_ADDRESS}) — --daemon=wrapper for restart-safety"
 echo "${BTX_REWARD_ADDRESS}" > /workspace/.btx/reward-address.txt
 export PATH=/workspace/btx/build/bin:$PATH
 
 BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin/btxd \
+BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
 nohup /workspace/btx/contrib/mining/start-live-mining.sh \
   --datadir=/workspace/.btx \
   --address-file=/workspace/.btx/reward-address.txt \

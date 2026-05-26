@@ -127,8 +127,21 @@ fixedseeds=1
 EOF
 chmod 600 /workspace/.btx/btx.conf
 
-log "Starting btxd with BTX_MATMUL_BACKEND=cuda"
-BTX_MATMUL_BACKEND=cuda nohup /workspace/btx/build/bin/btxd -datadir=/workspace/.btx -daemon
+log "Installing btxd wrapper (CRITICAL — preserves BTX_MATMUL_BACKEND across restarts)"
+# The mining supervisor STRIPS env vars when it restarts btxd. Without this
+# wrapper, btxd silently falls back to CPU mining after the first chain_guard
+# auto-recovery restart. See retro: see internal retrospective
+mkdir -p /workspace/btx/build/bin-wrapped
+cat > /workspace/btx/build/bin-wrapped/btxd <<'WRAPPER'
+#!/bin/bash
+# Auto-installed by runpod-bootstrap.sh — sets CUDA env vars then exec's real btxd.
+# Supervisor points --daemon at this wrapper so restarts preserve env.
+exec env BTX_MATMUL_BACKEND=cuda CUDA_VISIBLE_DEVICES=0 /workspace/btx/build/bin/btxd "$@"
+WRAPPER
+chmod +x /workspace/btx/build/bin-wrapped/btxd
+
+log "Starting btxd via wrapper"
+/workspace/btx/build/bin-wrapped/btxd -datadir=/workspace/.btx -daemon
 
 log "Waiting for btxd to be RPC-ready (up to 60s)"
 for i in {1..30}; do
@@ -139,12 +152,22 @@ for i in {1..30}; do
 done
 /workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getblockchaininfo | jq '.blocks, .headers'
 
-log "Launching mining supervisor (pays to ${BTX_REWARD_ADDRESS})"
+log "Verifying CUDA env is set on running btxd"
+BTXD_PID=$(pgrep btxd | head -1)
+if [[ -n "$BTXD_PID" ]] && tr '\0' '\n' < /proc/$BTXD_PID/environ 2>/dev/null | grep -q '^BTX_MATMUL_BACKEND=cuda$'; then
+  echo "  ✓ BTX_MATMUL_BACKEND=cuda confirmed in btxd env (PID $BTXD_PID)"
+else
+  echo "  ✗ FATAL: BTX_MATMUL_BACKEND not set on btxd. Wrapper failed."
+  echo "  Manual recovery: kill btxd, then: /workspace/btx/build/bin-wrapped/btxd -daemon -datadir=/workspace/.btx"
+  exit 1
+fi
+
+log "Launching mining supervisor (pays to ${BTX_REWARD_ADDRESS}) — --daemon=wrapper for restart-safety"
 echo "${BTX_REWARD_ADDRESS}" > /workspace/.btx/reward-address.txt
 export PATH=/workspace/btx/build/bin:$PATH
 
 BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin/btxd \
+BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
 nohup /workspace/btx/contrib/mining/start-live-mining.sh \
   --datadir=/workspace/.btx \
   --address-file=/workspace/.btx/reward-address.txt \
@@ -181,4 +204,23 @@ RunPod-specific notes:
   - SSH port may change after pod restart — note new details from RunPod console
   - "Stop" pod pauses billing on GPU but keeps container; "Terminate" destroys everything
   - Secure Cloud is the reliable tier; Community Cloud is variable (avoid for sustained mining)
+
+VERIFICATION CHECKLIST (run within 30 min after mining starts):
+
+  # 1. GPU power must be sustained > 200W (idle is ~70W, mining is ~400-500W)
+  nvidia-smi --query-gpu=power.draw,utilization.gpu --format=csv,noheader
+
+  # 2. btxd env MUST include BTX_MATMUL_BACKEND=cuda
+  tr '\\0' '\\n' < /proc/\$(pgrep btxd)/environ | grep BTX_MATMUL
+
+  # 3. Supervisor's --daemon flag MUST point at the wrapper, not the bare btxd
+  ps -o cmd= -p \$(pgrep -f live-mining-loop) | tr ' ' '\\n' | grep daemon=
+  # Expected: --daemon=/workspace/btx/build/bin-wrapped/btxd
+
+If GPU stays at ~70W for > 5 min after IBD completes:
+  - btxd is running on CPU. Kill + restart via wrapper:
+      /workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx stop
+      sleep 3
+      /workspace/btx/build/bin-wrapped/btxd -daemon -datadir=/workspace/.btx
+  - Then verify step 2 again.
 EOF

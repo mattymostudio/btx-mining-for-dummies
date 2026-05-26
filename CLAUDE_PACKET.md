@@ -279,9 +279,25 @@ tail -10 /workspace/.btx/mining.log
 - Peer count > 5
 - Mining log shows "Started live mining loop"
 
+**MANDATORY post-IBD verification (run within 30 min of mining going live):**
+
+```bash
+# 1. GPU power must be sustained > 200W (70W = idle/CPU mode, 400-500W = real mining)
+nvidia-smi --query-gpu=power.draw,utilization.gpu --format=csv,noheader
+# 2. btxd env MUST have BTX_MATMUL_BACKEND=cuda (otherwise we're on CPU)
+tr '\0' '\n' < /proc/$(pgrep btxd)/environ | grep BTX_MATMUL
+# 3. Supervisor MUST point at the wrapper (so restarts preserve env)
+ps -o cmd= -p $(pgrep -f live-mining-loop) | tr ' ' '\n' | grep daemon=
+# Expected: --daemon=/workspace/btx/build/bin-wrapped/btxd
+```
+
+If GPU stays at ~70W for > 5 min after IBD completes → see "Mining supervisor restarts btxd without preserving env vars" in troubleshooting. **This failure mode is silent — the dashboard, mining log, and getmininginfo all look normal while you burn cloud cost for zero hashrate.**
+
 **Then wait 4-12 hours for IBD on Vast.** Mining auto-starts when chain_guard clears (`should_pause_mining: false`).
 
 **First block typically arrives 0-72 hours after mining starts.** Variance is huge at small share — they may find 0 in week 1 then 5 in week 2. Patience.
+
+**Health sanity check at 24h mark:** at H100 hashrate, expected ~10-30 blocks/day. If wallet balance hasn't grown in 12+ hours, run the verification block above — most common cause is CPU-mode fallback after a supervisor restart.
 
 ---
 
@@ -374,16 +390,32 @@ fixedseeds=1
 EOF
 chmod 600 /workspace/.btx/btx.conf
 
-echo "[miner] Starting btxd with BTX_MATMUL_BACKEND=cuda"
-BTX_MATMUL_BACKEND=cuda nohup /workspace/btx/build/bin/btxd -datadir=/workspace/.btx -daemon
+echo "[miner] Installing btxd wrapper (preserves BTX_MATMUL_BACKEND across supervisor restarts)"
+# CRITICAL: without this wrapper, the mining supervisor's auto-recovery restarts
+# silently fall back to CPU mining. See troubleshooting for full explanation.
+mkdir -p /workspace/btx/build/bin-wrapped
+cat > /workspace/btx/build/bin-wrapped/btxd <<'WRAPPER'
+#!/bin/bash
+exec env BTX_MATMUL_BACKEND=cuda CUDA_VISIBLE_DEVICES=0 /workspace/btx/build/bin/btxd "$@"
+WRAPPER
+chmod +x /workspace/btx/build/bin-wrapped/btxd
+
+echo "[miner] Starting btxd via wrapper"
+/workspace/btx/build/bin-wrapped/btxd -datadir=/workspace/.btx -daemon
 sleep 15
 /workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getblockchaininfo | jq '.blocks, .headers'
 
-echo "[miner] Launching mining supervisor"
+echo "[miner] Verifying CUDA env on running btxd"
+BTXD_PID=$(pgrep btxd | head -1)
+tr '\0' '\n' < /proc/$BTXD_PID/environ | grep -q '^BTX_MATMUL_BACKEND=cuda$' \
+  && echo "  ✓ CUDA env confirmed" \
+  || { echo "  ✗ FATAL: wrapper failed, btxd is on CPU"; exit 1; }
+
+echo "[miner] Launching mining supervisor (--daemon=wrapper for restart-safety)"
 echo "${BTX_REWARD_ADDRESS}" > /workspace/.btx/reward-address.txt
 export PATH=/workspace/btx/build/bin:$PATH
 BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin/btxd \
+BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
 nohup /workspace/btx/contrib/mining/start-live-mining.sh \
   --datadir=/workspace/.btx \
   --address-file=/workspace/.btx/reward-address.txt \
@@ -444,8 +476,45 @@ Container network layer broken (we hit this on Vast). Peers connect (visible in 
 ### "GPU 1 stuck at 100% util / ~115W after btxd died"
 CUDA context not released by dead btxd. Reboot the instance via web UI (kill -9 won't release the GPU context). On owned hardware, `sudo nvidia-smi --gpu-reset` works.
 
-### "Mining supervisor restarts btxd without preserving env vars"
-Mining supervisor calls btxd directly without inheriting `BTX_MATMUL_BACKEND=cuda` or `CUDA_VISIBLE_DEVICES=N`. After supervisor-managed restart, the new btxd may fall back to CPU mining. Workaround: wrap btxd in a launch script that sets env vars, point supervisor at that.
+### "Mining supervisor restarts btxd without preserving env vars" (now fixed by default)
+**This used to silently drop the user into CPU mining after the first chain_guard auto-recovery — costing real money for zero hashrate.** The fix is now baked into all bootstrap scripts and the one-shot build block above: a wrapper at `/workspace/btx/build/bin-wrapped/btxd` sets `BTX_MATMUL_BACKEND=cuda` and `CUDA_VISIBLE_DEVICES=0` before exec'ing the real btxd. The mining supervisor's `--daemon` flag points at the wrapper, so every restart preserves the env.
+
+**If you're upgrading from a pre-wrapper bootstrap, retrofit:**
+```bash
+# 1. Install wrapper
+mkdir -p /workspace/btx/build/bin-wrapped
+cat > /workspace/btx/build/bin-wrapped/btxd <<'WRAPPER'
+#!/bin/bash
+exec env BTX_MATMUL_BACKEND=cuda CUDA_VISIBLE_DEVICES=0 /workspace/btx/build/bin/btxd "$@"
+WRAPPER
+chmod +x /workspace/btx/build/bin-wrapped/btxd
+
+# 2. Stop supervisor + btxd
+pkill -f live-mining-loop.sh
+/workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx stop
+sleep 5
+
+# 3. Restart via wrapper + supervisor pointed at wrapper
+/workspace/btx/build/bin-wrapped/btxd -daemon -datadir=/workspace/.btx
+sleep 10
+BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
+BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
+nohup /workspace/btx/contrib/mining/start-live-mining.sh \
+  --datadir=/workspace/.btx \
+  --address-file=/workspace/.btx/reward-address.txt \
+  > /workspace/.btx/mining.log 2>&1 &
+```
+
+**Detection: how to know you're stuck in CPU mode**
+```bash
+# 1. GPU power should be 400-500W when actively mining, 70W idle. Sustained 70W = CPU mode.
+nvidia-smi --query-gpu=power.draw --format=csv,noheader
+# 2. btxd's environment must have BTX_MATMUL_BACKEND=cuda
+tr '\0' '\n' < /proc/$(pgrep btxd)/environ | grep BTX_MATMUL
+# 3. Supervisor must be using the wrapper
+ps -o cmd= -p $(pgrep -f live-mining-loop) | tr ' ' '\n' | grep daemon=
+# Expected: --daemon=/workspace/btx/build/bin-wrapped/btxd
+```
 
 ### "Hetzner wallet not loaded after restart"
 Add `wallet=miner-rewards` to `/home/btx/.btx/btx.conf` to auto-load on startup.
