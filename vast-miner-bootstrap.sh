@@ -115,7 +115,7 @@ chmod 600 /workspace/.btx/btx.conf
 log "Installing btxd wrapper (CRITICAL — preserves BTX_MATMUL_BACKEND across restarts)"
 # The mining supervisor STRIPS env vars when it restarts btxd. Without this
 # wrapper, btxd silently falls back to CPU mining after the first chain_guard
-# auto-recovery restart. See retro: see internal retrospective
+# auto-recovery restart. See internal retrospective for full incident timeline.
 mkdir -p /workspace/btx/build/bin-wrapped
 cat > /workspace/btx/build/bin-wrapped/btxd <<'WRAPPER'
 #!/bin/bash

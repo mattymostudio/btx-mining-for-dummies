@@ -61,7 +61,7 @@ TOTAL_SPEND=$(awk -v a="${VAST_SPEND}" -v b="${HETZNER_SPEND}" 'BEGIN{printf "%.
 VAST_JSON=$(vast_query "/workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getblockchaininfo 2>/dev/null && /workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getconnectioncount 2>/dev/null && nvidia-smi --query-gpu=utilization.gpu,memory.used,power.draw --format=csv,noheader,nounits 2>/dev/null")
 VAST_BLOCKS=$(echo "${VAST_JSON}" | jq -r '.blocks // 0' 2>/dev/null | head -1)
 VAST_HEADERS=$(echo "${VAST_JSON}" | jq -r '.headers // 0' 2>/dev/null | head -1)
-VAST_IBD=$(echo "${VAST_JSON}" | jq -r '.initialblockdownload // true' 2>/dev/null | head -1)
+VAST_IBD=$(echo "${VAST_JSON}" | jq -r 'if has("initialblockdownload") then (.initialblockdownload | tostring) else "true" end' 2>/dev/null | head -1)
 VAST_PROGRESS=$(echo "${VAST_JSON}" | jq -r '.verificationprogress // 0' 2>/dev/null | head -1)
 VAST_PEERS=$(echo "${VAST_JSON}" | grep -oE '^[0-9]+$' | head -1)
 VAST_GPU=$(echo "${VAST_JSON}" | grep -E '^[0-9]+, [0-9]+, [0-9]+' | head -1)
@@ -155,15 +155,17 @@ STATUS_LINE=""
 [[ "${VAST_IBD}" == "false" ]] && STATUS_LINE="${STATUS_LINE}🟢 ${VAST_PROVIDER}: synced  " || STATUS_LINE="${STATUS_LINE}🟡 ${VAST_PROVIDER}: syncing  "
 [[ "${HET_BALANCE:-0}" != "0.00000000" ]] && [[ -n "${HET_BALANCE}" ]] && STATUS_LINE="${STATUS_LINE}🟢 Earning  " || STATUS_LINE="${STATUS_LINE}⚪ No rewards yet  "
 
-# CPU-vs-GPU mode badge — detect from GPU power draw (idle ~70W, mining ~400-500W)
-# Critical because supervisor-restart can drop btxd to CPU mode silently. See retro.
+# CPU-vs-GPU mode badge — use GPU memory as the signal (binary, stable)
+# When mining via CUDA: ~687 MB loaded. CPU mode: 0 MB. Power fluctuates between
+# hash cycles so memory is the cleaner indicator. See retro for full context.
+GPU_MEM=$(echo "${VAST_GPU:-0, 0, 0}" | awk -F', ' '{print $2+0}')
 GPU_WATTS=$(echo "${VAST_GPU:-0, 0, 0}" | awk -F', ' '{print $3+0}')
 if [[ "${VAST_IBD}" == "true" ]]; then
   STATUS_LINE="${STATUS_LINE}⏳ Mode: IBD (idle expected)  "
-elif (( $(awk -v w="${GPU_WATTS:-0}" 'BEGIN{print (w>200)}') )); then
-  STATUS_LINE="${STATUS_LINE}🟢 Mode: GPU (${GPU_WATTS}W)  "
+elif (( $(awk -v m="${GPU_MEM:-0}" 'BEGIN{print (m>100)}') )); then
+  STATUS_LINE="${STATUS_LINE}🟢 Mode: GPU (${GPU_MEM}MB / ${GPU_WATTS}W)  "
 elif [[ -n "${VAST_GPU}" ]]; then
-  STATUS_LINE="${STATUS_LINE}🔴 Mode: CPU-FALLBACK? (${GPU_WATTS}W) — see retro  "
+  STATUS_LINE="${STATUS_LINE}🔴 Mode: CPU-FALLBACK? (mem=${GPU_MEM}MB) — see retro  "
 fi
 
 echo
