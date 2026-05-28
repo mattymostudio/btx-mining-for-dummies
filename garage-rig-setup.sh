@@ -23,7 +23,7 @@ set -euo pipefail
 
 # === REQUIRED env vars (no defaults — script will fail if unset) ===
 : "${BTX_REWARD_ADDRESS:?must set BTX reward address (from your cloud-node-setup.sh output)}"
-: "${BTX_HETZNER_PEER_IP:?must set Hetzner peer IP (your wallet-node's public IP)}"
+: "${BTX_HETZNER_PEER_IP:?must set Hetzner peer IP (your wallet-node public IP)}"
 
 # === Optional with defaults ===
 BTX_CUDA_ARCH="${BTX_CUDA_ARCH:-120}"     # 5090=120, 4090=89, 3090=86
@@ -212,24 +212,34 @@ log "Installing systemd unit for live-mining-supervisor"
 echo "${BTX_REWARD_ADDRESS}" > "${BTX_DATA}/reward-address.txt"
 chown "${BTX_USER}:${BTX_USER}" "${BTX_DATA}/reward-address.txt"
 
+mkdir -p "${BTX_DATA}/mining-ops"
+chown "${BTX_USER}:${BTX_USER}" "${BTX_DATA}/mining-ops"
+
+# We call live-mining-loop.sh DIRECTLY instead of start-live-mining.sh.
+# start-live-mining.sh auto-provisions a local wallet and overwrites
+# reward-address.txt with its address, breaking the "pay to remote wallet"
+# pattern. The inner loop accepts --address= so we can be explicit.
+# --sleep=0.2 keeps the GPU duty cycle near 100% (default is 1.0).
 cat > /etc/systemd/system/btx-miner.service <<EOF
 [Unit]
-Description=BTX mining supervisor (pays to ${BTX_REWARD_ADDRESS})
+Description=BTX mining loop (pays to ${BTX_REWARD_ADDRESS})
 After=btxd.service
 Requires=btxd.service
 
 [Service]
 Type=simple
 User=${BTX_USER}
-Environment="BTX_MINING_CLI=${BTX_SRC}/build/bin/btx-cli"
-# Point supervisor at the wrapper — if it restarts btxd, env is preserved.
-Environment="BTX_MINING_DAEMON=${BTX_SRC}/build/bin-wrapped/btxd"
 Environment="BTX_MATMUL_BACKEND=cuda"
 Environment="CUDA_VISIBLE_DEVICES=0"
 WorkingDirectory=${BTX_SRC}
-ExecStart=${BTX_SRC}/contrib/mining/start-live-mining.sh \\
+ExecStart=${BTX_SRC}/contrib/mining/live-mining-loop.sh \\
   --datadir=${BTX_DATA} \\
-  --address-file=${BTX_DATA}/reward-address.txt
+  --cli=${BTX_SRC}/build/bin/btx-cli \\
+  --daemon=${BTX_SRC}/build/bin-wrapped/btxd \\
+  --results-dir=${BTX_DATA}/mining-ops \\
+  --address=${BTX_REWARD_ADDRESS} \\
+  --address-file=${BTX_DATA}/reward-address.txt \\
+  --sleep=0.2
 Restart=on-failure
 RestartSec=30
 

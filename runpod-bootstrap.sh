@@ -162,15 +162,30 @@ else
   exit 1
 fi
 
-log "Launching mining supervisor (pays to ${BTX_REWARD_ADDRESS}) — --daemon=wrapper for restart-safety"
+log "Launching live-mining-loop directly (skips wallet auto-provisioning) with --sleep=0.2"
+# We call live-mining-loop.sh DIRECTLY instead of start-live-mining.sh because
+# start-live-mining.sh provisions a local "miner" wallet on the pod and
+# OVERWRITES reward-address.txt with that local address — defeating our goal of
+# paying rewards to a Hetzner-controlled wallet. Calling the inner loop with an
+# explicit --address lets us bypass that.
+#
+# --sleep=0.2 (vs the default --sleep=1.0) keeps GPU duty cycle near 100%.
+# At sleep=1.0 the GPU spends ~80% of its time idle between hash batches,
+# capping effective hashrate at ~17% of the card's benchmark capability.
 echo "${BTX_REWARD_ADDRESS}" > /workspace/.btx/reward-address.txt
 export PATH=/workspace/btx/build/bin:$PATH
+mkdir -p /workspace/.btx/mining-ops
 
-BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
-nohup /workspace/btx/contrib/mining/start-live-mining.sh \
+BTX_MATMUL_BACKEND=cuda \
+CUDA_VISIBLE_DEVICES=0 \
+nohup /workspace/btx/contrib/mining/live-mining-loop.sh \
   --datadir=/workspace/.btx \
+  --cli=/workspace/btx/build/bin/btx-cli \
+  --daemon=/workspace/btx/build/bin-wrapped/btxd \
+  --results-dir=/workspace/.btx/mining-ops \
+  --address="${BTX_REWARD_ADDRESS}" \
   --address-file=/workspace/.btx/reward-address.txt \
+  --sleep=0.2 \
   > /workspace/.btx/mining.log 2>&1 &
 
 MINER_PID=$!

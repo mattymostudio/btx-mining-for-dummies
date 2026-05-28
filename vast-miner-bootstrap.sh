@@ -148,15 +148,26 @@ fi
 
 # === Mining supervisor ===
 
-log "Launching mining supervisor (pays to ${BTX_REWARD_ADDRESS}) — --daemon=wrapper for restart-safety"
+log "Launching live-mining-loop directly (skips wallet auto-provisioning) with --sleep=0.2"
+# See runpod-bootstrap.sh for the full rationale. Briefly: start-live-mining.sh
+# auto-creates a local "miner" wallet and overwrites reward-address.txt, which
+# breaks the "pay rewards to Hetzner" pattern. Calling live-mining-loop.sh
+# directly with --address bypasses that. --sleep=0.2 keeps GPU duty cycle near
+# 100% (default --sleep=1.0 leaves the GPU idle ~80% of the time).
 echo "${BTX_REWARD_ADDRESS}" > /workspace/.btx/reward-address.txt
 export PATH=/workspace/btx/build/bin:$PATH
+mkdir -p /workspace/.btx/mining-ops
 
-BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
-nohup /workspace/btx/contrib/mining/start-live-mining.sh \
+BTX_MATMUL_BACKEND=cuda \
+CUDA_VISIBLE_DEVICES=0 \
+nohup /workspace/btx/contrib/mining/live-mining-loop.sh \
   --datadir=/workspace/.btx \
+  --cli=/workspace/btx/build/bin/btx-cli \
+  --daemon=/workspace/btx/build/bin-wrapped/btxd \
+  --results-dir=/workspace/.btx/mining-ops \
+  --address="${BTX_REWARD_ADDRESS}" \
   --address-file=/workspace/.btx/reward-address.txt \
+  --sleep=0.2 \
   > /workspace/.btx/mining.log 2>&1 &
 
 MINER_PID=$!
