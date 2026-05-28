@@ -17,7 +17,7 @@ BTX (btxchain) is a Bitcoin Knots v29.2 fork with two key innovations:
 Mainnet stable as of March 2026. Block time 90 seconds. Block reward 20 BTX. Max supply 21M. No exchange listings yet — accumulation is via mining only.
 
 **Repo:** https://github.com/btxchain/btx
-**Price model (not market):** https://btxprice.com (model spot ~$1-2, 12m projection ~$1,200+)
+**Price model (not market):** https://btxprice.com — a theoretical community model. Projections shift dramatically as the chain matures; treat any number there as speculation, never as forecast. No market exists for BTX yet.
 
 ⚠️ **The user is making a speculative bet, not a yield play.** BTX has no market. Their accumulated BTX cannot be sold today. Frame it as: "you're spending ~$X for the chance that BTX lists at $Y in 12 months." If they don't have spare risk capital, this isn't the right activity for them.
 
@@ -58,7 +58,7 @@ Two cloud nodes paired together:
 
 **60-day "data gathering" run:** ~$1,000
 
-**Returns:** Unknown until they mine for ~1 week. Even after a week, BTX has no market price, so "profit" exists only on paper. Be honest: realistic outcomes range from "total loss if BTX never lists" to "10-100× ROI if BTX trades at projected model price."
+**Returns:** Unknown. BTX has no market price, so "profit" exists only on paper. Outcomes range from total loss (if BTX never lists or the chain fails) to unknown upside if it lists at meaningful prices. Do NOT quote specific dollar projections or ROI multiples — the only honest answer is "we don't know." Anything from btxprice.com is a theoretical model that has already recalibrated dramatically as the chain has matured.
 
 **Mining yield:** Their first block typically lands within 24-72 hours of mining starting. After that, they should expect ~1 block per day per GPU at current network conditions (subject to rapid changes — network hashrate is growing fast).
 

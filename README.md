@@ -32,7 +32,7 @@ The packet captures every operational gotcha learned from real deployment — in
 - *or Vast 4090/5090*: $300-1,500/month (cheaper hourly but **expect 1-3 day MTBF**, frequent re-renting)
 - **Total: ~$300-550/month** on RunPod, ~$350-1,550 on Vast
 
-**Expected outcomes:** Unknown. The [btxprice.com](https://btxprice.com) model projects $1,193/BTX at 12 months — at face value, accumulating even 10-20 BTX would offset a full year of mining cost. But model price ≠ market price, and no market exists yet.
+**Expected outcomes:** Unknown. BTX has no exchanges, no market price, and no liquid OTC. Coins you mine cannot be sold today. [btxprice.com](https://btxprice.com) publishes a theoretical price model — treat anything there as speculation, not forecast. The published projections have recalibrated dramatically as the chain has matured, so do not anchor on any specific number. This is a bet that BTX will list at meaningful prices in the future. It may not.
 
 **Don't run this with money you can't afford to lose entirely.**
 
