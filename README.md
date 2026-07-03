@@ -1,8 +1,10 @@
 # BTX Mining For Dummies
 
-A complete, opinionated setup guide for mining **BTX** (the post-quantum, MatMul-PoW Bitcoin Knots fork at [btxchain/btx](https://github.com/btxchain/btx)) using cloud infrastructure — designed to be driven by [Claude Code](https://claude.com/claude-code) so the operator can be technically literate without being a developer.
+**BTX** ([btxchain/btx](https://github.com/btxchain/btx)) is a new cryptocurrency, launched March 2026, that you cannot buy anywhere — no exchange lists it. The only way to acquire it is to mine it. This repo is a complete, opinionated playbook for doing that with rented cloud hardware, written to be driven by [Claude Code](https://claude.com/claude-code) so the operator can be technically literate without being a developer, sysadmin, or crypto-native.
 
-You paste the packet into Claude. Claude walks you through every step. You end up with a running pool miner, a wallet, and a way to verify payouts on-chain.
+You paste the packet into Claude. Claude explains each concept, walks you through every step, and catches the known mistakes before they cost money. You end up with a running pool miner, a wallet you control, and a way to verify — on-chain, trusting no one — that you're actually being paid.
+
+Everything here is distilled from three months of real deployments (May–July 2026): through provider failures, a chain fork, and a mid-course pivot from solo to pool mining. Every gotcha documented below cost real time or money to learn. If you don't know what "mining," "pool," or "wallet node" mean yet, there's a [plain-English explainer](#how-it-works-in-plain-english) below.
 
 Published by [Matty Mo Studio](https://themostfamousartist.com).
 
@@ -26,6 +28,24 @@ This playbook was first published in May 2026. **The chain and the playbook both
    - **There is still no exchange listing and no executable market.** [btxprice.com](https://btxprice.com) publishes model values, not trades; the OTC site is a non-binding lead-matching desk. Coins you mine mark to ~$0 until a real venue exists.
 
 **Our own posture after learning all this: we kept existing miners running at marginal cost and stopped adding capital.** This repo remains published because the operational knowledge is real and hard-won — but the honest frame has shifted from "speculative bet" to "speculative bet on a chain with a live disclosure problem." Size accordingly.
+
+---
+
+## How it works, in plain English
+
+**The chain.** BTX is a Bitcoin-family cryptocurrency with two twists. First, the "work" miners perform is enormous integer matrix multiplication — the same math AI chips are built for — so mining runs on ordinary GPUs rather than specialized Bitcoin hardware. Second, its signatures use post-quantum cryptography, designed to survive future quantum computers. It launched in March 2026, and that youth is the entire reason this playbook exists: a young chain has little mining competition, so a single rented GPU still earns meaningful coin. That window narrows every week as more miners arrive.
+
+**Mining.** Roughly every 90 seconds the network runs a lottery: mining machines churn through the matrix math, and the first to find a winning answer adds the next block to the ledger and earns 20 BTX. Your odds are exactly your slice of the network's total compute.
+
+**Why a pool.** Solo mining is jackpot-or-nothing — a single GPU might win twice in a day, then nothing for a week. A mining pool is the office lottery syndicate: thousands of GPUs buy tickets together, and winnings are split in proportion to the work ("shares") each machine contributed. You trade the jackpot for a steady trickle. On this network, the pool isn't just about smoothing variance — it's essential: a lone cloud GPU that *does* win a block usually can't announce it to the network fast enough, and its win gets discarded ("orphaned"). We measured this: 3 of our 4 solo-found blocks evaporated. The pool has the network position to make wins stick.
+
+**The two machines you'll rent.**
+- A **GPU box** (Vast.ai, roughly $0.50/hr) that does nothing but math and submits shares to the pool. It holds no coins, no keys, and no ledger — if it dies, you re-rent another and lose nothing.
+- A **wallet node** (Hetzner, ~$46/mo) that is your vault and your auditor: it holds the cryptographic keys that control your coins, and it maintains your own independent copy of the BTX ledger, so you can confirm the pool actually paid you without taking anyone's word for it.
+
+**The money flow.** GPU box submits shares → pool credits your account → every pay period the pool sends BTX to your address → the wallet node's keys control that address → you verify the payment against your own copy of the ledger.
+
+**Claude's role.** `CLAUDE_PACKET.md` is a runbook: the architecture, every command, and every known failure mode. Claude Code reads it and becomes your operator — explaining what each step is for, executing it with you, and recognizing the documented errors when they appear. You supply judgment and credit cards; Claude supplies the sysadmin.
 
 ---
 
@@ -146,6 +166,31 @@ You do NOT need:
 | **Pool on cloud GPU (this playbook)** | $0 | ~$380-490 | No node, hashing in minutes, box death is free, paid per share | Pool + dev fees, must trust pool to pay (verify on-chain!) |
 | **Solo on cloud GPU (legacy)** | $0 | ~$350-750 | Full 20 BTX block reward | **~75% of blocks orphan on NAT'd containers** — don't |
 | **Owned rig, solo or pool** | $3,500-4,500 | ~$51 power | Best long-term unit economics | High commit to a chain with disclosure problems |
+
+---
+
+## FAQ
+
+**Can I sell the BTX I mine?**
+Not today. No exchange lists it, and there is no functioning over-the-counter market. That is the entire bet: you're spending real dollars now for coins that are worth something only if a real market ever exists. See the July 2026 status update above before deciding how you feel about those odds.
+
+**Is this profitable?**
+Unknowable. Profit requires a price, and BTX has no market price — only theoretical models. Anyone quoting you an ROI is making it up.
+
+**Can I mine on my gaming PC or laptop?**
+The software technically runs anywhere with a modern GPU, but mining rewards 24/7 uptime on a top-end card. A laptop will earn almost nothing and cook itself. A gaming PC with a 4090/5090 works if you're comfortable running it flat-out around the clock — `garage-rig-setup.sh` covers that path — but this playbook's default is rented cloud GPUs precisely so you don't have to commit hardware to an unproven chain.
+
+**What happens if the GPU box dies?**
+Nothing. In pool mode it holds no keys, no coins, and no chain data — you re-rent a new box and paste one script. This is by design; cheap cloud hosts fail constantly.
+
+**How do I know the pool isn't cheating me?**
+You don't trust it — you check. Your wallet node keeps an independent copy of the entire ledger, and the playbook includes the exact command (`scantxoutset`) that scans it for payments to your address. If the pool's dashboard says "paid" and your own ledger copy disagrees, you stop mining there. The packet walks you through this verification after your first pay period.
+
+**Why does this need Claude?**
+Strictly, it doesn't — an experienced Linux admin could follow the scripts by hand. The packet exists so that someone who *isn't* one can operate this safely: it encodes every failure mode we hit, and Claude recognizes them in real time instead of you discovering them at 2am with a billing meter running.
+
+**Why rent cloud GPUs instead of buying one?**
+No upfront cost, no hardware to resell if you quit, and a clean exit at any moment. Owned hardware wins on long-run economics (3-5× cheaper per coin over two years), but committing $3,500+ of hardware to this particular chain requires more conviction than its June 2026 track record currently earns.
 
 ---
 

@@ -39,6 +39,22 @@ Mainnet since March 2026 (genesis 2026-03-19). Block time ~90 seconds. Block rew
 
 ---
 
+## Teach as you go — plain-English concepts
+
+The user is smart but not crypto-native. **Before each phase, give a one-breath explanation of what the next step is for and why it exists** — then the commands. Never make them execute something they couldn't paraphrase back. Analogies that have worked:
+
+- **Mining** = a lottery drawn every ~90 seconds. Machines churn matrix math; first winning answer adds the next block and earns 20 BTX. Odds = your slice of total network compute.
+- **A pool** = an office lottery syndicate. Everyone's GPUs buy tickets together; winnings split in proportion to work contributed ("shares"). You trade jackpots for a steady trickle. On this network the syndicate is also *structural*: a lone NAT'd cloud box that wins can't announce its block fast enough and the win is discarded ("orphaned") — the pool has the network position to make wins stick.
+- **The GPU box** = a disposable worker. It does math and submits shares. No keys, no coins, no ledger. Its death costs nothing but re-rental time.
+- **The wallet node** = vault + auditor. It holds the keys that control the coins, and its own full copy of the ledger — so the user can verify payments without trusting the pool's dashboard.
+- **The payout address** (`btx1…`) = an account number. Safe to share, safe to put in scripts. The **wallet files/keys** on the Hetzner box are the opposite: whoever has them owns the coins. Never paste, never share, always back up.
+- **`scantxoutset`** = "check your own copy of the books instead of believing the pool's receipt."
+- **Shares vs blocks** = punched timecards vs the actual jackpot. Accepted shares prove the GPU is working and earning; the pool converts them to BTX at each pay period.
+
+Checkpoints ("tell me what you see") are also teaching moments — when the user reports output, say what it means in one sentence before moving on.
+
+---
+
 ## The architecture (pool-first, revised June 2026)
 
 ```
