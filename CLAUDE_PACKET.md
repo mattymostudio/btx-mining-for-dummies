@@ -14,13 +14,13 @@ Do not start setup until the user has acknowledged these four facts. They change
 
 1. **The chain went through rapid consensus upgrades in mid-June 2026 and forked.** 13 releases shipped June 5–16 with six-plus mandatory consensus activations (heights ~123,000–135,000), some activating within about a day of release — a young chain iterating fast. Consequence: nodes on v0.31.0 or older stranded on a dead fork around height ~125,600. **Any node this playbook builds must come from current `main` (or a ≥v0.32.x release) — never an old binary or old checkout.** A node whose height is stuck near ~125,600 is on the dead fork.
 
-2. **The release-signing key changed in June.** Binaries ≥~v0.32.9 are signed by a new key (`C55C98C7…CD566156`, "BTX Release Maintainer <release@btx.local>", created 2026-06-13), not the key that signed earlier releases. The rotation isn't documented yet, so it can't be independently verified from outside. **This playbook sidesteps the question: build from source, pin versions, never enable auto-update** (the project itself ships with auto-update disabled).
+2. **The release-signing key changed in June.** Binaries ≥~v0.32.9 are signed by a new key (`C55C98C7…CD566156`, "BTX Release Maintainer <release@btx.local>", created 2026-06-13), not the key that signed earlier releases. Most likely routine housekeeping by a small team moving fast — the write-up just hasn't landed yet. Until it does, standard hygiene applies (and this playbook uses it anyway): **build from source, pin versions, never enable auto-update** (the project itself ships with auto-update disabled).
 
 3. **Solo mining on cloud GPUs orphans most blocks.** NAT'd containers (`connections_in=0`) lose propagation races on this fast (≈77-90s block) network — we measured 3 of 4 found blocks orphaned. **Pool mining is the path**, and the ecosystem matured quickly enough to make it a good one: pool mode needs no local node, no chain sync, no snapshot; the box hashes within a minute and its death costs nothing.
 
-4. **Fundamentals the user should know** (public sources: btx.dev, the repo, chain data): the team is pseudonymous ("BTX Developers"); the first 50k blocks were mined at a compressed cadence into a team-controlled "genesis multisig" — a ~1M BTX (~4.76%) reserve earmarked in part for providing early market depth, with a management policy not yet documented; the shielded pool was retired in June via consensus changes, rationale unpublished; docs were last updated 2026-03-30; **no exchange listing yet — mined coins can't be sold today.**
+4. **What "early" looks like** — none of this is a red flag on its own; it's a small team solving a hard problem, shipping code faster than paperwork (public sources: btx.dev, the repo, chain data): the team is pseudonymous ("BTX Developers"), not unusual in this space; the first 50k blocks were mined at a compressed cadence into a team-controlled "genesis multisig" — a ~1M BTX (~4.76%) reserve earmarked in part for providing early market depth, docs pending; the shielded pool was retired in June via consensus changes, write-up pending; project docs (last updated 2026-03-30) trail the code — recent history lives in release notes, community channels, and the chain itself; **no exchange listing yet — mined coins can't be sold today.**
 
-⚠️ **The user is making a speculative, pre-market bet, not a yield play.** If they don't have spare risk capital, this isn't the right activity for them. If they ask "will I make money," the honest answer is "unknowable — there's no market yet; you're accumulating a position in the chain's future."
+⚠️ **The user is making a speculative, pre-market bet, not a yield play.** They should be mining because they believe the chain might turn into something — to hold a position, learn the stack, and be part of the community while it's small. If they don't have spare risk capital, this isn't the right activity for them. If they ask "will I make money," the honest answer is "unknowable — there's no market yet; you're accumulating a position in the chain's future."
 
 ---
 
@@ -297,7 +297,7 @@ CUDA context not released. Reboot the instance via web UI (`kill -9` won't free 
 Default BTX branch is `main`. Use `BTX_REF=main` with the setup script.
 
 **"GPG signature verification failed" (faststart)**
-The signing key isn't on public keyservers, and note the release key **changed undocumented in June 2026**. The safe path is what the script already does: fall back to building/syncing from source. Don't chase binary signatures.
+The signing key isn't on public keyservers, and note the release key changed in June 2026 (write-up pending). The safe path is what the script already does: fall back to building/syncing from source. Don't chase binary signatures.
 
 **"Hetzner wallet not loaded after restart"**
 Add `wallet=miner-rewards` to `/home/btx/.btx/btx.conf` (the setup script does this; older setups may lack it).
