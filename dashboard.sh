@@ -67,12 +67,24 @@ VAST_PEERS=$(echo "${VAST_JSON}" | grep -oE '^[0-9]+$' | head -1)
 VAST_GPU=$(echo "${VAST_JSON}" | grep -E '^[0-9]+, [0-9]+, [0-9]+' | head -1)
 
 # Hetzner state
-HET_RESULT=$(hetzner_query "sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx getblockchaininfo 2>/dev/null; sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx getconnectioncount 2>/dev/null; sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx -rpcwallet=miner-rewards getbalance 2>/dev/null")
+HET_RESULT=$(hetzner_query "sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx getblockchaininfo 2>/dev/null; sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx getconnectioncount 2>/dev/null; sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx -rpcwallet=miner-rewards getbalances 2>/dev/null")
 HET_BLOCKS=$(echo "${HET_RESULT}" | jq -r '.blocks // 0' 2>/dev/null | head -1)
 HET_HEADERS=$(echo "${HET_RESULT}" | jq -r '.headers // 0' 2>/dev/null | head -1)
 HET_PROGRESS=$(echo "${HET_RESULT}" | jq -r '.verificationprogress // 0' 2>/dev/null | head -1)
-HET_BALANCE=$(echo "${HET_RESULT}" | grep -E '^[0-9]+\.[0-9]+$' | head -1)
 HET_PEERS=$(echo "${HET_RESULT}" | grep -oE '^[0-9]+$' | head -1)
+# Balance split from getbalances: spendable (mature) vs immature coinbase (<100 confs).
+# Parsed locally; JSON keys "trusted"/"immature" are unambiguous (neither is a
+# substring of the other) so grep can't cross-match them.
+HET_SPENDABLE=$(echo "${HET_RESULT}" | grep -oE '"trusted": *[0-9.]+' | head -1 | sed -E 's/.*: *//')
+HET_IMMATURE=$(echo "${HET_RESULT}" | grep -oE '"immature": *[0-9.]+' | head -1 | sed -E 's/.*: *//')
+if [[ -n "${HET_SPENDABLE}" || -n "${HET_IMMATURE}" ]]; then
+  HET_TOTAL=$(awk -v s="${HET_SPENDABLE:-0}" -v i="${HET_IMMATURE:-0}" 'BEGIN{printf "%.8f", s+i}')
+else
+  HET_TOTAL=""
+fi
+# Downstream value/break-even math reflects TOTAL mined (immature coins are yours,
+# just time-locked until 100 confs). HET_BALANCE = canonical holdings figure.
+HET_BALANCE="${HET_TOTAL}"
 
 # Derived
 BLOCKS_FOUND=$(awk -v b="${HET_BALANCE:-0}" -v r="${BTX_BLOCK_REWARD}" 'BEGIN{printf "%d", b/r}')
@@ -124,8 +136,10 @@ cat <<EOF
 ╠════════════════════════════════════════════════════════════════════╣
 ║ WALLET (Hetzner, ${HETZNER_HOST})
 ║   Sync          : ${HET_BLOCKS:-?} / ${HET_HEADERS:-?} blocks ($(awk -v p="${HET_PROGRESS:-0}" 'BEGIN{printf "%.1f%%", p*100}'))
-║   Balance       : ${HET_BALANCE:-not loaded} BTX
-║   Blocks found  : ${BLOCKS_FOUND:-0}  (balance ÷ ${BTX_BLOCK_REWARD} BTX/block reward)
+║   Total mined   : ${HET_TOTAL:-not loaded} BTX
+║     spendable   : ${HET_SPENDABLE:-?} BTX  (mature, ≥100 confs)
+║     immature    : ${HET_IMMATURE:-0} BTX  (recent coinbase, maturing)
+║   Blocks found  : ${BLOCKS_FOUND:-0}  (total ÷ ${BTX_BLOCK_REWARD} BTX/block)
 ║   Peers         : ${HET_PEERS:-?}
 ╠════════════════════════════════════════════════════════════════════╣
 ║ SPEND (since ${VAST_START_EPOCH} / ${HETZNER_START_EPOCH})
