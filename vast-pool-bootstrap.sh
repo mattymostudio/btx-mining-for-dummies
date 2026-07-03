@@ -34,8 +34,8 @@ done
 command -v matador-miner >/dev/null || { echo "FATAL: matador-miner did not install"; exit 1; }
 
 log "launch supervised pool miner (worker=${WORKER})"
-# --no-update-check is deliberate: given this chain's June 2026 release/key history,
-# nothing on this box self-updates. Pin what works.
+# --no-update-check is deliberate: this chain ships fast, so pin what works —
+# nothing on this box self-updates.
 cat > /root/run-matador.sh <<SUP
 #!/usr/bin/env bash
 while true; do

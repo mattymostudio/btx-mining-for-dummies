@@ -12,15 +12,15 @@
 
 Do not start setup until the user has acknowledged these four facts. They change both the risk picture and the technical path.
 
-1. **The chain forked in mid-June 2026.** 13 releases shipped June 5–16 with six-plus mandatory consensus activations (heights ~123,000–135,000), some on ~1 day's notice. Nodes on v0.31.0 or older stranded on a dead fork around height ~125,600. No public postmortem exists. **Any node this playbook builds must come from current `main` (or a ≥v0.32.x release) — never an old binary or old checkout.** A node whose height is stuck near ~125,600 is on the dead fork.
+1. **The chain went through rapid consensus upgrades in mid-June 2026 and forked.** 13 releases shipped June 5–16 with six-plus mandatory consensus activations (heights ~123,000–135,000), some activating within about a day of release — a young chain iterating fast. Consequence: nodes on v0.31.0 or older stranded on a dead fork around height ~125,600. **Any node this playbook builds must come from current `main` (or a ≥v0.32.x release) — never an old binary or old checkout.** A node whose height is stuck near ~125,600 is on the dead fork.
 
-2. **The release-signing key rotated undocumented.** Binaries ≥~v0.32.9 are signed by a new key (`C55C98C7…CD566156`, "BTX Release Maintainer <release@btx.local>", created 2026-06-13), not the long-standing developer key. No cross-signature, no announcement, tags now unsigned. Legitimate-but-sloppy rotation and a compromised release pipeline are indistinguishable from outside. **Mitigation in this playbook: build from source, pin versions, never enable auto-update** (the project itself has auto-update disabled network-wide).
+2. **The release-signing key changed in June.** Binaries ≥~v0.32.9 are signed by a new key (`C55C98C7…CD566156`, "BTX Release Maintainer <release@btx.local>", created 2026-06-13), not the key that signed earlier releases. The rotation isn't documented yet, so it can't be independently verified from outside. **This playbook sidesteps the question: build from source, pin versions, never enable auto-update** (the project itself ships with auto-update disabled).
 
-3. **Solo mining on cloud GPUs orphans most blocks.** NAT'd containers (`connections_in=0`) lose propagation races on this fast (≈77-90s block) network — we measured 3 of 4 found blocks orphaned. **Pool mining is the path.** Bonus: pool mode needs no local node, no chain sync, no snapshot; the box hashes within a minute and its death costs nothing.
+3. **Solo mining on cloud GPUs orphans most blocks.** NAT'd containers (`connections_in=0`) lose propagation races on this fast (≈77-90s block) network — we measured 3 of 4 found blocks orphaned. **Pool mining is the path**, and the ecosystem matured quickly enough to make it a good one: pool mode needs no local node, no chain sync, no snapshot; the box hashes within a minute and its death costs nothing.
 
-4. **Risk facts** (public sources: btx.dev, the repo, chain data): team fully anonymous; ~1M BTX (~4.76%) effective premine to an undocumented team "genesis multisig" whose stated purposes include making "early market depth"; shielded pool sunset in June via emergency-shaped consensus changes with no stated cause; docs unchanged since 2026-03-30 (predate everything above); **no exchange, no executable market — mined coins mark to ~$0 today.**
+4. **Fundamentals the user should know** (public sources: btx.dev, the repo, chain data): the team is pseudonymous ("BTX Developers"); the first 50k blocks were mined at a compressed cadence into a team-controlled "genesis multisig" — a ~1M BTX (~4.76%) reserve earmarked in part for providing early market depth, with a management policy not yet documented; the shielded pool was retired in June via consensus changes, rationale unpublished; docs were last updated 2026-03-30; **no exchange listing yet — mined coins can't be sold today.**
 
-⚠️ **The user is making a speculative bet, not a yield play.** If they don't have spare risk capital, this isn't the right activity for them. If they ask "will I make money," the honest answer is "no idea — and the June events made the bet worse, not better."
+⚠️ **The user is making a speculative, pre-market bet, not a yield play.** If they don't have spare risk capital, this isn't the right activity for them. If they ask "will I make money," the honest answer is "unknowable — there's no market yet; you're accumulating a position in the chain's future."
 
 ---
 
@@ -200,7 +200,7 @@ The script:
 - installs `matador-miner` (GPU MatMul pool miner, [vanities/matador-miner](https://github.com/vanities/matador-miner))
 - launches it supervised (auto-restart loop) against `stratum.minebtx.com:3333` with `stratum.bitminerpool.xyz:3333` as failover
 - **writes `/root/onstart.sh` so Vast host reboots restart the miner automatically.** This matters: without it, a host reboot silently kills the miner and the box keeps billing while doing nothing (this failure cost us ~$80 over 6 idle days before we caught it)
-- runs with `--no-update-check` — given this chain's release history, nothing on these boxes self-updates
+- runs with `--no-update-check` — this chain ships fast, so pin what works; nothing on these boxes self-updates
 
 **Within ~1 minute** the log should show pool authorization and accepted shares. That's it — no sync, no wallet, no keys on the box.
 
@@ -317,7 +317,7 @@ The original solo path (btxd + CUDA backend + live-mining supervisor on the GPU 
 2. **Pool "pays" but `scantxoutset` on a synced canonical node shows nothing for 2+ pay periods** — possible pool problem; stop hashing there, ask in community channels
 3. **Signature/key anomalies during any install** — given the June rotation, never "work around" a failed verification silently
 4. **Wallet balance unexpectedly goes down** — should never happen; investigate immediately
-5. **They want to scale beyond 1-2 GPUs** — economics + risk conversation, not a setup task. Given the chain's June 2026 events and zero liquidity, more capital needs more conviction than a playbook can supply
+5. **They want to scale beyond 1-2 GPUs** — an economics + conviction conversation, not a setup task; worth making with real yield data in hand rather than from a playbook
 6. **They want a garage rig** — physical hardware is a different project entirely
 
 ---
@@ -333,8 +333,8 @@ After the first pay period:
 - Payout independently verified on-chain via `scantxoutset` — not just trusted from the pool dashboard
 
 After 30-60 days:
-- Real cost-per-BTX data
-- An informed continue/scale/exit decision — made against the honest backdrop that the coins remain unsellable until a market exists
+- Real cost-per-BTX data and a feel for network growth
+- An informed continue/scale/exit decision — made on your own numbers instead of guesses
 
 ---
 
@@ -344,7 +344,7 @@ After 30-60 days:
 - **Anti-condescending** — explain WHY when something matters, don't just give commands.
 - **Confirm at checkpoints** — "Tell me what you see at the prompt before continuing." The payout address deserves a full read-back.
 - **Catch errors before they happen** — warn preemptively at the error-prone steps (address entry, pasting before SSH connects).
-- **Honest about uncertainty** — "will I make money" → "no idea; no market exists, and the June 2026 events are unresolved risk."
+- **Honest about uncertainty** — "will I make money" → "unknowable; no market exists yet — you're accumulating a position in the chain's future."
 - **Don't bury the risk section** — if the user skipped the READ FIRST block, bring them back to it before any money is spent.
 - **Stop and redirect** if they deviate significantly (different pool, solo on cloud, weird GPU). The packet is opinionated for documented reasons; the cookbook only covers the documented path.
 

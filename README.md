@@ -10,24 +10,24 @@ Published by [Matty Mo Studio](https://themostfamousartist.com).
 
 ---
 
-## ⚠️ July 2026 status update — read this before anything else
+## ⚠️ July 2026 update — read this before anything else
 
-This playbook was first published in May 2026. **The chain and the playbook both changed materially in June 2026.** If you cloned this repo before July 2026, re-read everything. What happened:
+This playbook was first published in May 2026. **Both the chain and the playbook changed materially in June 2026.** If you cloned this repo before July 2026, re-read everything. What changed:
 
-1. **The chain forked in mid-June 2026.** Between June 5–16 the project shipped 13 releases containing six-plus *mandatory* consensus activations (heights ~123,000–135,000), some announced roughly a day before activation. Nodes running v0.31.0 or older — including nodes set up by earlier versions of this playbook — got stranded on a dead fork around height ~125,600. No public postmortem was ever published. **If your node's block height is stuck near 125,600, you are on the dead fork** (see the troubleshooting cookbook for how to recover — coins mined *before* the divergence are typically safe on the canonical chain, but verify).
+1. **The chain went through rapid consensus upgrades in mid-June 2026 — and forked.** Between June 5–16 the project shipped 13 releases carrying six-plus *mandatory* consensus activations (heights ~123,000–135,000), some activating within about a day of release. That's a young chain iterating fast — but the practical consequence is that nodes running v0.31.0 or older, including nodes set up by earlier versions of this playbook, were left on a dead fork around height ~125,600. **If your node's block height is stuck near 125,600, you are on the dead fork** (the troubleshooting cookbook covers recovery — coins mined *before* the divergence are typically intact on the canonical chain, but verify). The playbook now builds every node from current source, so you always carry the latest consensus rules.
 
-2. **The release-signing key changed without announcement.** Binaries from ~v0.32.9 onward are signed by a new key (`C55C98C7…CD566156`, "BTX Release Maintainer <release@btx.local>", created 2026-06-13) instead of the long-standing developer key that signed everything before. There is no cross-signature from the old key, no note in SECURITY.md, and git tags are no longer signed. A sloppy-but-legitimate rotation and a compromised release pipeline look identical from the outside. **This playbook now builds from source and never trusts auto-update.**
+2. **The release-signing key changed in June.** Binaries from ~v0.32.9 onward are signed by a new key (`C55C98C7…CD566156`, "BTX Release Maintainer <release@btx.local>", created 2026-06-13) rather than the key that signed earlier releases. The rotation hasn't been documented by the team yet, which means it can't be independently verified from outside. This playbook sidesteps the question entirely: **build from source, pin versions, and never rely on auto-update** (the project itself currently ships with auto-update disabled).
 
-3. **Solo mining on cloud GPUs doesn't work.** Empirically, NAT'd cloud containers lose the large majority of found blocks to orphaning (we measured 3 of 4 blocks orphaned) — they sit at the edge of the network and lose propagation races. **Pool mining now exists and is the recommended path** (this reverses the original playbook's architecture). Pool mode is also dramatically simpler: no local node, no chain sync, hashing within about a minute of renting a box.
+3. **Solo mining on cloud GPUs doesn't work — pools do.** Empirically, NAT'd cloud containers lose most found blocks to orphaning (we measured 3 of 4) — they sit at the edge of the network and lose propagation races. The good news is that the mining ecosystem matured quickly: **pool mining now exists and is the recommended path** (this reverses the original playbook's architecture). Pool mode is also dramatically simpler — no local node, no chain sync, hashing within about a minute of renting a box.
 
-4. **Facts worth knowing before you spend money** (all verifiable from public sources — the project's own site, repo, and chain data):
-   - The team is fully anonymous ("BTX Developers"); releases are published by two GitHub accounts.
-   - The first 50,000 blocks were mined at a compressed cadence into a team-controlled "genesis multisig" — effectively a **~1M BTX (~4.76% of max supply) premine** whose spending policy the project's own spec says should be documented, but never was. Its stated purposes include providing "early market depth" — i.e., the team intends to make markets itself.
-   - The shielded transaction pool was sunset in June via emergency-shaped consensus changes (forced-exit transactions, drain RPCs, velocity quotas). No cause was ever stated.
-   - Project documentation has not been updated since 2026-03-30 — it predates and does not mention any of the above.
-   - **There is still no exchange listing and no executable market.** [btxprice.com](https://btxprice.com) publishes model values, not trades; the OTC site is a non-binding lead-matching desk. Coins you mine mark to ~$0 until a real venue exists.
+4. **Know the fundamentals before you spend money** (all verifiable from public sources — the project's own site, repo, and chain data):
+   - The development team is pseudonymous ("BTX Developers"); releases are published by two GitHub accounts.
+   - The first 50,000 blocks were mined at a compressed cadence into a team-controlled "genesis multisig" — a reserve of roughly 1M BTX (~4.76% of max supply) earmarked for, among other things, providing early market depth. Its management policy is not yet documented.
+   - The shielded transaction pool was retired in June via consensus changes; the team hasn't published the rationale.
+   - Project documentation was last updated 2026-03-30 and doesn't yet cover any of the above.
+   - **There is no exchange listing yet.** [btxprice.com](https://btxprice.com) publishes model values, not trades; the OTC site matches buyers and sellers rather than executing trades. Coins you mine can't be sold today — the value of mining is a position in the chain's future.
 
-**Our own posture after learning all this: we kept existing miners running at marginal cost and stopped adding capital.** This repo remains published because the operational knowledge is real and hard-won — but the honest frame has shifted from "speculative bet" to "speculative bet on a chain with a live disclosure problem." Size accordingly.
+**The honest frame:** this is early-stage, high-risk, high-conviction territory. The bull case is real — a post-quantum chain with a GPU-friendly proof-of-work, early-miner economics that reward showing up now, and an ecosystem (pools, dedicated miners, tooling) that matured visibly within the chain's first four months. The growing pains above are real too. Mine because you believe in where the chain is going, with money you can afford to park there indefinitely.
 
 ---
 
@@ -64,7 +64,7 @@ The packet captures every operational gotcha learned from real deployment — in
 
 ## ⚠️ Read before you start
 
-**This is a speculative bet with a live disclosure problem** (see the July 2026 status update above). BTX has no exchanges, no market price, no liquid OTC. Coins you mine cannot be sold today. If BTX never lists, your spend is a loss.
+**This is a speculative, pre-market bet** (see the July 2026 update above). BTX has no exchanges, no market price, no liquid OTC. Coins you mine cannot be sold today — you are accumulating a position in the chain's future. If BTX never lists, your spend is a loss.
 
 **Expected costs (pool path):**
 - GPU box (Vast.ai RTX 5090): **~$0.45-0.60/hr ≈ $330-440/month** at 24/7
@@ -165,20 +165,20 @@ You do NOT need:
 |---|---|---|---|---|
 | **Pool on cloud GPU (this playbook)** | $0 | ~$380-490 | No node, hashing in minutes, box death is free, paid per share | Pool + dev fees, must trust pool to pay (verify on-chain!) |
 | **Solo on cloud GPU (legacy)** | $0 | ~$350-750 | Full 20 BTX block reward | **~75% of blocks orphan on NAT'd containers** — don't |
-| **Owned rig, solo or pool** | $3,500-4,500 | ~$51 power | Best long-term unit economics | High commit to a chain with disclosure problems |
+| **Owned rig, solo or pool** | $3,500-4,500 | ~$51 power | Best long-term unit economics | High upfront commit — validate your economics in the cloud first |
 
 ---
 
 ## FAQ
 
 **Can I sell the BTX I mine?**
-Not today. No exchange lists it, and there is no functioning over-the-counter market. That is the entire bet: you're spending real dollars now for coins that are worth something only if a real market ever exists. See the July 2026 status update above before deciding how you feel about those odds.
+Not today. No exchange lists it, and there is no functioning over-the-counter market yet. That's the nature of the bet: you're spending dollars now to accumulate a position that pays off if and when a real market develops. You're mining conviction, not income.
 
 **Is this profitable?**
 Unknowable. Profit requires a price, and BTX has no market price — only theoretical models. Anyone quoting you an ROI is making it up.
 
 **Can I mine on my gaming PC or laptop?**
-The software technically runs anywhere with a modern GPU, but mining rewards 24/7 uptime on a top-end card. A laptop will earn almost nothing and cook itself. A gaming PC with a 4090/5090 works if you're comfortable running it flat-out around the clock — `garage-rig-setup.sh` covers that path — but this playbook's default is rented cloud GPUs precisely so you don't have to commit hardware to an unproven chain.
+The software technically runs anywhere with a modern GPU, but mining rewards 24/7 uptime on a top-end card. A laptop will earn almost nothing and cook itself. A gaming PC with a 4090/5090 works if you're comfortable running it flat-out around the clock — `garage-rig-setup.sh` covers that path — but this playbook's default is rented cloud GPUs precisely so you can start without committing hardware.
 
 **What happens if the GPU box dies?**
 Nothing. In pool mode it holds no keys, no coins, and no chain data — you re-rent a new box and paste one script. This is by design; cheap cloud hosts fail constantly.
@@ -190,7 +190,7 @@ You don't trust it — you check. Your wallet node keeps an independent copy of 
 Strictly, it doesn't — an experienced Linux admin could follow the scripts by hand. The packet exists so that someone who *isn't* one can operate this safely: it encodes every failure mode we hit, and Claude recognizes them in real time instead of you discovering them at 2am with a billing meter running.
 
 **Why rent cloud GPUs instead of buying one?**
-No upfront cost, no hardware to resell if you quit, and a clean exit at any moment. Owned hardware wins on long-run economics (3-5× cheaper per coin over two years), but committing $3,500+ of hardware to this particular chain requires more conviction than its June 2026 track record currently earns.
+No upfront cost, no hardware to resell if you quit, and a clean exit at any moment. Owned hardware wins on long-run economics (3-5× cheaper per coin over two years) — it's the right move once a month or two of cloud data has validated your own numbers, and `garage-rig-setup.sh` is here for when it does.
 
 ---
 
@@ -207,8 +207,8 @@ If you find errors, hit pitfalls not in the troubleshooting section, or improve 
 **This is not financial advice. Nothing in this repository constitutes investment, tax, legal, or any other professional advice.** The authors are not financial advisors, brokers, dealers, or registered investment professionals. Any decision you make about whether to mine BTX, how much to spend, or what to do with mined coins is entirely your own responsibility.
 
 BTX mining involves a speculative cryptocurrency where:
-- The chain has **already forked once** (June 2026) with no postmortem
-- The release-signing key has **already rotated once** without documentation
+- The chain hard-forked during rapid consensus upgrades (June 2026) and may fork again
+- The release-signing key rotated in June 2026 without public documentation
 - Listings may never materialize; there is no market today
 - Models published at [btxprice.com](https://btxprice.com) are theoretical — not market prices
 - You may spend $1,000+ and recover $0
@@ -243,4 +243,4 @@ btx-mining-for-dummies/
 └── garage-rig-setup.sh             # legacy: owned-hardware solo miner
 ```
 
-Paste the packet into Claude, follow along, mine BTX — eyes open.
+Paste the packet into Claude, follow along, mine BTX.
