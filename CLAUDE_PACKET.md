@@ -2,9 +2,25 @@
 
 **Audience:** A Claude instance helping a user who is technically literate (can paste commands into a terminal, follow instructions) but is NOT a developer, sysadmin, or crypto-native.
 
-**Goal:** Get them mining BTX (btxchain) end-to-end via cloud infrastructure (no garage hardware, no Linux server knowledge required) within ~6 hours of work spread over 1-2 sessions.
+**Goal:** Get them pool-mining BTX (btxchain) end-to-end via cloud infrastructure within ~2 hours of active work, with a wallet they control and a way to independently verify the pool is paying them.
 
 **Your role:** Patient, careful, anti-condescending. Confirm at each step. Catch the specific failure modes documented below before they happen.
+
+---
+
+## ⚠️ READ FIRST — June 2026 network events (make sure the user knows this before they spend)
+
+Do not start setup until the user has acknowledged these four facts. They change both the risk picture and the technical path.
+
+1. **The chain forked in mid-June 2026.** 13 releases shipped June 5–16 with six-plus mandatory consensus activations (heights ~123,000–135,000), some on ~1 day's notice. Nodes on v0.31.0 or older stranded on a dead fork around height ~125,600. No public postmortem exists. **Any node this playbook builds must come from current `main` (or a ≥v0.32.x release) — never an old binary or old checkout.** A node whose height is stuck near ~125,600 is on the dead fork.
+
+2. **The release-signing key rotated undocumented.** Binaries ≥~v0.32.9 are signed by a new key (`C55C98C7…CD566156`, "BTX Release Maintainer <release@btx.local>", created 2026-06-13), not the long-standing developer key. No cross-signature, no announcement, tags now unsigned. Legitimate-but-sloppy rotation and a compromised release pipeline are indistinguishable from outside. **Mitigation in this playbook: build from source, pin versions, never enable auto-update** (the project itself has auto-update disabled network-wide).
+
+3. **Solo mining on cloud GPUs orphans most blocks.** NAT'd containers (`connections_in=0`) lose propagation races on this fast (≈77-90s block) network — we measured 3 of 4 found blocks orphaned. **Pool mining is the path.** Bonus: pool mode needs no local node, no chain sync, no snapshot; the box hashes within a minute and its death costs nothing.
+
+4. **Risk facts** (public sources: btx.dev, the repo, chain data): team fully anonymous; ~1M BTX (~4.76%) effective premine to an undocumented team "genesis multisig" whose stated purposes include making "early market depth"; shielded pool sunset in June via emergency-shaped consensus changes with no stated cause; docs unchanged since 2026-03-30 (predate everything above); **no exchange, no executable market — mined coins mark to ~$0 today.**
+
+⚠️ **The user is making a speculative bet, not a yield play.** If they don't have spare risk capital, this isn't the right activity for them. If they ask "will I make money," the honest answer is "no idea — and the June events made the bet worse, not better."
 
 ---
 
@@ -14,53 +30,53 @@ BTX (btxchain) is a Bitcoin Knots v29.2 fork with two key innovations:
 - **MatMul Proof-of-Work** instead of SHA-256 — mining work is integer matrix multiplication over the Mersenne prime field F_{2^31 - 1}
 - **Post-quantum signatures** (ML-DSA-44 primary, SLH-DSA backup)
 
-Mainnet stable as of March 2026. Block time 90 seconds. Block reward 20 BTX. Max supply 21M. No exchange listings yet — accumulation is via mining only.
+Mainnet since March 2026 (genesis 2026-03-19). Block time ~90 seconds. Block reward 20 BTX. Max supply 21M. Canonical chain height was ~148,000 as of early July 2026.
 
 **Repo:** https://github.com/btxchain/btx
-**Price model (not market):** https://btxprice.com — a theoretical community model. Projections shift dramatically as the chain matures; treat any number there as speculation, never as forecast. No market exists for BTX yet.
+**Price model (not market):** https://btxprice.com — a theoretical model. No market exists for BTX. Never quote its numbers as expected value.
 
-⚠️ **The user is making a speculative bet, not a yield play.** BTX has no market. Their accumulated BTX cannot be sold today. Frame it as: "you're spending ~$X for the chance that BTX lists at $Y in 12 months." If they don't have spare risk capital, this isn't the right activity for them.
+**Ticker collision warning:** "BTX" also names BitCore (an old altcoin) and a Solana token. Exchange/CoinGecko data for "BTX" is almost certainly NOT this chain. Verify before treating any listing as relevant.
 
 ---
 
-## The architecture
-
-Two cloud nodes paired together:
+## The architecture (pool-first, revised June 2026)
 
 ```
-┌──────────────────┐           ┌────────────────────┐
-│  Hetzner CPX41   │ ◄──p2p──► │  Vast.ai GPU node  │
-│  (wallet + node) │  port 19335│  (CUDA miner)      │
-│  <YOUR_HETZNER_PUBLIC_IP>     │           │  Variable IP/port  │
-│  Always-on       │           │  $0.50-1.50/hr     │
-└──────────────────┘           └────────────────────┘
-        │                              │
-        │ holds wallet                 │ runs btxd with
-        │ receives rewards             │ BTX_MATMUL_BACKEND=cuda
-        │ ~$46/mo                      │ + live-mining-supervisor
-        └─────── mining rewards go ───┘
-                 to a Hetzner address
-                 (Vast can die without losing funds)
+┌────────────────────┐          ┌──────────────────────┐
+│  Vast.ai GPU box   │──shares─►│  Pool                │
+│  matador-miner     │ stratum  │  stratum.minebtx.com │
+│  (no keys, no node,│          │  (+ failover pool)   │
+│   no chain state)  │          └──────────┬───────────┘
+└────────────────────┘                     │ batched payouts
+                                           ▼
+                              your payout address (btx1…)
+                                           ▲
+┌────────────────────┐                     │
+│  Hetzner CPX41     │─── wallet holds ────┘
+│  wallet + node     │    the keys; node verifies
+│  ~$46/mo, always-on│    payouts on-chain
+└────────────────────┘
 ```
 
-**Why two nodes:** Hetzner is the persistent wallet — if Vast crashes, no funds lost. Vast is the GPU miner — short-lived rentals are cheap and replaceable.
+**Why this shape:**
+- The **GPU box** runs only `matador-miner` in pool mode. It holds no keys and no chain state. It can be destroyed and re-rented in minutes at zero loss.
+- The **pool** aggregates hashrate, wins the propagation races the NAT'd box can't, and pays out per accepted share (fee ~2.5% at minebtx, plus matador-miner's mandatory 1% dev fee).
+- The **wallet node** (Hetzner) is where the payout address comes from and — critically — where the user *independently verifies* the pool actually pays. Trust, but `scantxoutset`.
+
+**Setup order matters:** wallet node first (you need the payout address), but its multi-hour chain sync runs in the background while you set up the miner. The miner doesn't wait for it.
 
 ---
 
 ## Total cost & time expectations (be upfront)
 
-**Setup time:** 2-6 hours active work over 1-2 sessions.
+**Setup time:** ~1-2 hours active work. The wallet node syncs in the background (many hours — MatMul validation makes IBD slow); mining starts without it.
 
 **Ongoing cost:**
-- Hetzner CPX41: **$46/mo** (Hillsboro, OR — fixed)
-- Vast.ai GPU: **$300-700/mo** depending on GPU choice and uptime
-- **Total: ~$350-750/mo**
+- Vast.ai RTX 5090: **~$0.45-0.60/hr ≈ $330-440/mo** at 24/7 (4090s a bit less)
+- Hetzner CPX41: **~$46/mo**
+- **Total: ~$380-490/mo**, plus ~3.5% combined pool + dev fees off the top
 
-**60-day "data gathering" run:** ~$1,000
-
-**Returns:** Unknown. BTX has no market price, so "profit" exists only on paper. Outcomes range from total loss (if BTX never lists or the chain fails) to unknown upside if it lists at meaningful prices. Do NOT quote specific dollar projections or ROI multiples — the only honest answer is "we don't know." Anything from btxprice.com is a theoretical model that has already recalibrated dramatically as the chain has matured.
-
-**Mining yield:** Their first block typically lands within 24-72 hours of mining starting. After that, they should expect ~1 block per day per GPU at current network conditions (subject to rapid changes — network hashrate is growing fast).
+**Yield:** as of early July 2026, a single RTX 5090 earned on the order of a few BTX/day via pool, paid in batches per pay period (payouts are NOT continuous — expect lumpy arrivals, sometimes days apart). Network hashrate is growing; expect decline. Do NOT quote dollar projections — there is no market.
 
 ---
 
@@ -73,20 +89,20 @@ Two cloud nodes paired together:
 1. **Mac/Windows/Linux laptop** with a working terminal
 2. **Credit card** for Hetzner + Vast.ai (~$50 initial Vast credit, ~$5 Hetzner verification)
 3. **Email address** for account signups
-4. **SSH key on their machine** — if they don't have one, walk them through `ssh-keygen -t ed25519 -C "their@email.com"` (accept defaults, no passphrase for simplicity)
-5. **A password manager** (1Password, Bitwarden, or Apple Keychain) — they'll need to store RPC credentials and wallet addresses persistently
+4. **SSH key on their machine** — if missing, walk them through `ssh-keygen -t ed25519 -C "their@email.com"` (accept defaults, no passphrase for simplicity)
+5. **A password manager** (1Password, Bitwarden, or Apple Keychain) — they'll store RPC credentials and the payout address
 
-**Critical:** if they're on Windows, they need either WSL (Ubuntu) or a real terminal app (Windows Terminal + PowerShell works for SSH). If they're on Mac, default Terminal app is fine.
+**Critical:** on Windows they need WSL (Ubuntu) or Windows Terminal + PowerShell for SSH. On Mac, default Terminal is fine.
 
-### Phase 1: Hetzner setup (~30 min including 5-15min build wait)
+### Phase 1: Wallet node on Hetzner (~30 min active, sync runs in background)
 
 **Account & SSH key:**
 1. Sign up at console.hetzner.cloud, verify email + payment
-2. **Security → SSH Keys → Add** their public key (`cat ~/.ssh/id_ed25519.pub` on Mac/Linux, paste content)
+2. **Security → SSH Keys → Add** their public key (`cat ~/.ssh/id_ed25519.pub`, paste content)
 
 **Create the server:**
 - **Project:** create one called `btx-mining`
-- **Location:** **Hillsboro, OR** (US West — best GPU latency in US/EU mix)
+- **Location:** **Hillsboro, OR** (US West)
 - **Type:** Standard → **CPX41** (8 vCPU AMD / 16GB RAM / ~$46/mo)
 - **Image:** **Ubuntu 24.04**
 - **Networking:** Public IPv4 + IPv6 on (defaults)
@@ -107,478 +123,222 @@ ssh root@<their-hetzner-ip>
 BTX_REF=main bash /root/cloud-node-setup.sh
 ```
 
-**During the ~10-15min build, the user should:**
-- Stay connected — don't close the terminal
-- Watch for `[setup]` markers indicating phase progress
+**Why `main` and not a release tag:** building from current source guarantees the node has all the June 2026 consensus activations and sidesteps the binary-release signing-key question entirely. Never install a pre-built binary older than the v0.32.x series, and never enable any auto-update mechanism.
+
+**During the ~10-15min build:** stay connected, watch for `[setup]` markers.
 
 **Known issues during this phase:**
-1. **`Remote branch master not found`** — user forgot the `BTX_REF=main` env var. Solution: include it in the bash command.
-2. **GPG verification fails on faststart** — happens because BTX's signing key isn't on public keyservers. Workaround: skip faststart, let plain IBD run (slow but works). The script auto-fallbacks to plain IBD.
+1. **`Remote branch master not found`** — user forgot the `BTX_REF=main` env var.
+2. **GPG verification fails on faststart** — BTX's signing key isn't on public keyservers; the script auto-falls-back to plain IBD. Given the June key rotation, treat any signature-related surprise as a stop-and-verify moment, not something to work around silently.
 
 **After the script completes:**
-- The script prints a final block with **RPC user, RPC password, reward address, and instructions for Tailscale**.
-- Have them **copy this entire block** to their password manager under "BTX Hetzner Node."
-- **Skip Tailscale** — Vast containers can't run it. We peer over public IP instead. Just close the SSH session.
+- It prints **RPC user, RPC password, and the reward/payout address**. Have them **copy the whole block** into their password manager under "BTX Hetzner Node." The `btx1…` address is what the pool will pay.
+- **Back up the wallet immediately:** copy `/home/btx/.btx/wallets/miner-rewards/` off-box (e.g. `scp` to their laptop, then into encrypted storage). If the Hetzner box dies unbacked-up, accrued payouts are gone.
+- Skip Tailscale unless they want it — pool mode doesn't need the miner to reach this node at all.
 
-**Then wait for IBD.** This takes ~6-15 hours. The chain is ~107k blocks and the script does plain initial block download.
-
-They can close their laptop. The Hetzner server keeps running.
+**Then let IBD run in the background.** The chain is ~150k blocks and MatMul validation makes sync slow — expect many hours to a day. **Do not wait — go straight to Phase 2.** The node only needs to be synced later, for payout verification.
 
 ---
 
-### Phase 2 — Provider choice: RunPod (recommended) or Vast.ai
-
-⚠️ **Strong recommendation: use RunPod Secure Cloud, not Vast.** Empirical operational data from real BTX miners:
-- **Vast.ai**: 5 instances failed across 6 days (zombie state, "retries exceeded," disk fill, stuck CUDA contexts, peer-disconnect storms). P2P marketplace means random consumer-grade hosts. Cheaper hourly but you pay it back in babysitting time.
-- **RunPod Secure Cloud**: 99% SLA, Tier 3/4 datacenter hosts, ~1/3 the price of equivalent Vast for 4090 ($0.34-0.69/hr). Crypto-mining not prohibited in TOS.
-
-If you have free Vast credit to burn, use Vast as a *backup* miner alongside RunPod primary. Otherwise skip Vast entirely.
-
-### Phase 2A: RunPod setup (~30 min)
-
-**Account:**
-1. Sign up at runpod.io
-2. Add credit (Settings → Billing). $25-50 to start is plenty.
-3. Settings → SSH Public Keys → add your public key (`cat ~/.ssh/id_ed25519.pub`)
-
-**Find a good pod:**
-
-Filter at runpod.io/console/deploy:
-- **GPU**: RTX 4090 (best $/perf) or RTX 5090 if budget allows
-- **Pricing**: select **"Secure Cloud"** filter, NOT Community Cloud — Community = P2P (same Vast problems)
-- **Image / Template**: search "cuda" → pick `runpod/pytorch:2.x-cuda12.4-devel-ubuntu22.04` (or equivalent with `-devel`)
-- **Container Disk**: 50 GB (using `--preset miner` pruned mode) or 100 GB (full node)
-- **Network Volume** (optional but recommended): attach a 50GB volume — survives pod stop/restart
-
-Click "Deploy."
-
-**Get SSH details:**
-- RunPod console → My Pods → click your pod → Connect → SSH command shown like:
-  ```
-  ssh root@<pod-ip> -p <port> -i ~/.ssh/id_ed25519
-  ```
-
-**Bootstrap:**
-
-```bash
-scp -P <port> /path/to/runpod-bootstrap.sh root@<pod-ip>:/root/
-ssh root@<pod-ip> -p <port>
-export BTX_REWARD_ADDRESS=<from Hetzner setup>
-export BTX_HETZNER_PEER_IP=<your Hetzner public IP>
-export BTX_CUDA_ARCH=89   # or 120 for 5090
-bash /root/runpod-bootstrap.sh
-```
-
-Build takes ~5-10 min. Mining auto-starts when IBD completes (~6-12h).
-
-### Phase 2B: Vast.ai setup (~30 min, do this AFTER Hetzner is at least 50% synced) — OPTIONAL/FALLBACK
+### Phase 2: Pool miner on Vast.ai (~15 min, hashing in ~1 minute)
 
 **Account:**
 1. Sign up at cloud.vast.ai
 2. Add $50 credit (Account → Billing)
-3. Add their SSH public key (same one used for Hetzner) under Account → SSH Keys
-4. **Also add it per-instance** when you launch one (Vast quirk — account-level keys don't auto-apply)
+3. Add their SSH public key under Account → SSH Keys
+4. **Also add it per-instance** when launching (Vast quirk — account-level keys don't always auto-apply)
 
-**Find a good GPU offer:**
-
-Filter at cloud.vast.ai/create:
-- **GPU:** RTX 4090 OR 5090 (NOT 3090, NOT 5070, NOT 4070 — too few CUDA cores)
+**Find a GPU offer** at cloud.vast.ai/create:
+- **GPU:** RTX 5090 or 4090 (best MatMul throughput per dollar)
 - **#GPUs:** 1X
-- **Verified machines only**
-- Sort by $/hr ascending
+- **Verified machines only**, reliability ≥ 95%
+- **Template:** search "cuda" → the official **NVIDIA CUDA** template. Pool mode doesn't compile anything, so `runtime` vs `devel` image doesn't matter.
+- **Container size: 20 GB is plenty** (no chain state in pool mode — the old 100GB requirement is solo-only)
+- Sort by $/hr; **$0.40-0.60/hr for a 5090** is the current sane range
 
-Click **"Select Template"** → search "cuda" → pick **"NVIDIA CUDA"** (the Vast official one). Confirm the image tag includes `devel` (NOT `runtime` — we need nvcc).
+Click **RENT**, wait 1-3 min for "Running."
 
-**Pick an offer with these specs:**
-- **Container Size: must be set to 100 GB** (critical — defaults too small, will fill overnight and crash)
-- Verified host, reliability ≥ 95%
-- Bandwidth ≥ 500 Mbps
-- **Different from any previously-failed host_id** if they've had problems
+**Note on provider choice:** the original playbook pushed RunPod Secure Cloud because Vast hosts die often and solo mining made each death expensive (lost sync state, hours of rebuild). **Pool mode changes the math** — a dead Vast box costs nothing but the minutes to re-rent, so cheap Vast offers are fine again. RunPod still works if inventory is better; the bootstrap below is provider-agnostic except for the reboot-proofing note.
 
-**Recommended price range:** $0.50-1.50/hr for a 4090 or 5090.
+**Get SSH details:** Instances page → `>_` icon → copy the "Direct SSH" command, **strip the `-L 8080:…` part**, note the port.
 
-Click **RENT**, then in the configuration dialog:
-- **Container Size: drag slider to 100 GB** (or type it)
-- Disk volumes: skip
-- Confirm
-
-Wait 1-3 min for instance to become "Running."
-
-**Get SSH details:**
-1. Go to Instances page
-2. Click the `>_` (terminal) icon on the instance row
-3. The dialog shows the "Direct SSH" command — looks like:
-   `ssh -p XXXXX root@<ip-address> -L 8080:localhost:8080`
-4. **Strip the `-L 8080:localhost:8080`** (Jupyter forwarding, not needed)
-5. Note the port number
-
-**SSH in via tmux** (Vast quirk — default SSH session auto-attaches to tmux and bounces if no session exists):
+**SSH in via tmux** (Vast quirk — default SSH bounces if no tmux session exists):
 
 ```bash
 ssh -t -p <port> root@<ip> "tmux attach -t btx || tmux new -s btx"
 ```
 
-Once they see `(main) root@C.XXXXX:/workspace$`:
+**Run the bootstrap:**
 
 ```bash
-# Confirm 100GB disk
-df -h /workspace
-# Should show ~100G available
+# scp the script up first, from their laptop:
+scp -P <port> /path/to/vast-pool-bootstrap.sh root@<ip>:/root/
 
-# Set reward address (from Hetzner setup output)
-export BTX_REWARD_ADDRESS=<paste reward address from password manager>
-echo "Reward: $BTX_REWARD_ADDRESS"
+# then on the box:
+export BTX_PAYOUT_ADDRESS=<their btx1… address from Phase 1>
+export BTX_WORKER=rig1        # any label; shows up in pool stats
+bash /root/vast-pool-bootstrap.sh
 ```
 
-**Then paste the one-shot build block** (provided below in this packet). Build takes ~5-15 min on a decent host CPU.
+The script:
+- installs `matador-miner` (GPU MatMul pool miner, [vanities/matador-miner](https://github.com/vanities/matador-miner))
+- launches it supervised (auto-restart loop) against `stratum.minebtx.com:3333` with `stratum.bitminerpool.xyz:3333` as failover
+- **writes `/root/onstart.sh` so Vast host reboots restart the miner automatically.** This matters: without it, a host reboot silently kills the miner and the box keeps billing while doing nothing (this failure cost us ~$80 over 6 idle days before we caught it)
+- runs with `--no-update-check` — given this chain's release history, nothing on these boxes self-updates
 
-⚠️ **CRITICAL gotchas during Vast setup:**
+**Within ~1 minute** the log should show pool authorization and accepted shares. That's it — no sync, no wallet, no keys on the box.
 
-1. **BTX_CUDA_ARCHITECTURES varies by GPU:**
-   - **RTX 4090: use 89** (Ada Lovelace architecture)
-   - **RTX 5090: use 120** (Blackwell)
-   - **RTX 3090/3090 Ti: use 86** (Ampere)
-   - **RTX 4070/5070/4080: use 89 or 120** depending on series
-   - If unsure, the cmake will fail with a clear error — adjust accordingly.
-
-2. **CUDA backend is OPT-IN** — `-DBTX_ENABLE_CUDA_EXPERIMENTAL=ON` is required, default is OFF. Without it, btxd silently falls back to CPU mining (much slower).
-
-3. **`listen=1` in btx.conf is critical** — without it, peers can isolate and chain_guard pauses mining.
-
-4. **SSH session can drop** but processes survive via tmux. Have them reconnect with `ssh -t -p <port> root@<ip> "tmux attach -t btx"`.
-
-5. **Vast instances can go zombie** — dashboard shows "Running" but instance is unreachable. Reboot rarely fixes it. If SSH/`Open` button both fail and `nc -zv <ip> <port>` times out, the answer is destroy + re-rent.
+⚠️ **Gotchas:**
+1. **`BTX_PAYOUT_ADDRESS` must be THEIR address.** Triple-check against the password manager — a typo'd address pays a stranger, irreversibly. Read it back to them character-grouped.
+2. **Vast instances can zombie** — dashboard says "Running" but SSH fails. Destroy + re-rent on a different host. In pool mode this costs nothing.
+3. **The 1% matador dev fee is mandatory** — the miner periodically hashes for its developer. Expected, not a compromise.
 
 ---
 
-### Phase 3: Verify mining is live (~30 min waiting)
+### Phase 3: Verify it's real (~10 min now, ~5 min again after first payout)
 
-After the build script completes, run these checks:
-
-```bash
-echo "=== Backends compiled (CUDA must show compiled+available) ==="
-/workspace/btx/build/bin/btx-matmul-backend-info --backend cuda | head -15
-
-echo "=== Processes alive ==="
-ps aux | grep -v grep | grep -E 'btxd|mining'
-
-echo "=== Sync state ==="
-/workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getblockchaininfo | jq '.blocks, .headers, .verificationprogress, .initialblockdownload'
-
-echo "=== Peers (need >5) ==="
-/workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getconnectioncount
-
-echo "=== Mining loop ==="
-tail -10 /workspace/.btx/mining.log
-```
-
-**Healthy signals:**
-- CUDA backend: `compiled: true, available: true, reason: ready`
-- btxd + live-mining-loop both alive
-- Headers climbing fast to ~107k, blocks gradually filling in
-- Peer count > 5
-- Mining log shows "Started live mining loop"
-
-**MANDATORY post-IBD verification (run within 30 min of mining going live):**
+**A. Shares are being accepted (immediately):**
 
 ```bash
-# 1. GPU power must be sustained > 200W (70W = idle/CPU mode, 400-500W = real mining)
+grep -iE "authorized|accepted" /root/matador.log | tail -5
 nvidia-smi --query-gpu=power.draw,utilization.gpu --format=csv,noheader
-# 2. btxd env MUST have BTX_MATMUL_BACKEND=cuda (otherwise we're on CPU)
-tr '\0' '\n' < /proc/$(pgrep btxd)/environ | grep BTX_MATMUL
-# 3. Supervisor MUST point at the wrapper (so restarts preserve env)
-ps -o cmd= -p $(pgrep -f live-mining-loop) | tr ' ' '\n' | grep daemon=
-# Expected: --daemon=/workspace/btx/build/bin-wrapped/btxd
 ```
 
-If GPU stays at ~70W for > 5 min after IBD completes → see "Mining supervisor restarts btxd without preserving env vars" in troubleshooting. **This failure mode is silent — the dashboard, mining log, and getmininginfo all look normal while you burn cloud cost for zero hashrate.**
+Healthy: recent "share accepted" lines; GPU at ~100% util and high power draw (a 5090 pulls ~550-600W mining; sustained ~70W means it's NOT mining).
 
-**Then wait 4-12 hours for IBD on Vast.** Mining auto-starts when chain_guard clears (`should_pause_mining: false`).
+**B. The pool sees the worker (same day):** check the pool's public stats page for their payout address / worker label. minebtx publishes per-address stats.
 
-**First block typically arrives 0-72 hours after mining starts.** Variance is huge at small share — they may find 0 in week 1 then 5 in week 2. Patience.
+**C. Payouts actually land on the canonical chain (after the first pay period — may be days):**
 
-**Health sanity check at 24h mark:** at H100 hashrate, expected ~10-30 blocks/day. If wallet balance hasn't grown in 12+ hours, run the verification block above — most common cause is CPU-mode fallback after a supervisor restart.
+On the Hetzner node, once synced:
+
+```bash
+sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx \
+  scantxoutset start '["addr(<their btx1… address>)"]'
+```
+
+This scans the node's own UTXO set — **trustless verification that the pool paid.** The wallet's `getbalances` should show the same coins. If the pool's dashboard says "paid" but `scantxoutset` shows nothing new for several days, escalate (see below).
+
+**D. The node is on the canonical chain (once, after sync):** compare `getblockchaininfo` height against the pool's stats page or another public source. Heights should be within a few blocks. **A node stuck near ~125,600 is on the June dead fork** — see troubleshooting.
 
 ---
 
-### Phase 4: Dashboard for ongoing monitoring (~5 min)
+### Phase 4: Ongoing monitoring (~5 min)
 
-Download `dashboard.sh` to their local machine (provided in this packet's appendix).
-
-Create config:
+Daily habit (or teach them to ask Claude to do it):
 
 ```bash
-cat > ~/.btx-dashboard.conf <<EOF
-VAST_HOST=<their vast ip>
-VAST_PORT=<their vast port>
-VAST_HOURLY_RATE=<their hourly rate>
-VAST_START_EPOCH=$(date +%s)
-HETZNER_HOST=<their hetzner ip>
-HETZNER_MONTHLY_RATE=46.49
-HETZNER_START_EPOCH=$(date +%s)
-EOF
+# Miner alive + hashing?
+ssh -t -p <port> root@<ip> "nvidia-smi --query-gpu=power.draw,utilization.gpu --format=csv,noheader; grep -c 'accepted' /root/matador.log | tail -1"
+
+# Wallet node synced + balance? (on Hetzner)
+sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx getblockchaininfo | jq '.blocks'
+sudo -u btx /home/btx/btx/build/bin/btx-cli -datadir=/home/btx/.btx -rpcwallet=miner-rewards getbalances
 ```
 
-Then check status anytime:
+`dashboard.sh` in this repo renders the wallet-node side nicely (sync, spendable vs immature balance, spend vs accumulation). Its GPU-node panels assume the legacy solo architecture (a btxd on the Vast box) — in pool mode, ignore those or watch `matador.log` directly.
 
-```bash
-bash <path-to>/dashboard.sh
-```
-
-For auto-refresh every 30 sec:
-```bash
-watch -n 30 -c 'bash <path-to>/dashboard.sh'
-```
-
-**Dashboard shows:**
-- Sync state of both nodes
-- Mining state (paused/active)
-- GPU utilization
-- BTX balance + implied USD value at model price
-- Total spend vs accumulated value
-- Break-even calculation
-
----
-
-## The one-shot build block (paste into Vast tmux after env vars are set)
-
-```bash
-set -e
-export DEBIAN_FRONTEND=noninteractive
-HETZNER_PUBLIC_IP=<YOUR_HETZNER_PUBLIC_IP>   # The public IP from Phase 1 — replace before running
-BTX_CUDA_ARCH=89   # 89=4090, 120=5090, 86=3090, etc.
-
-AVAIL_GB=$(df -BG /workspace 2>/dev/null | awk 'NR==2 {print $4}' | sed 's/G//')
-[[ "${AVAIL_GB}" -lt 60 ]] && { echo "FATAL: only ${AVAIL_GB}GB free; need 60+"; exit 1; }
-echo "[guard] Disk OK: ${AVAIL_GB}GB free"
-
-echo "[miner] Installing build deps"
-apt-get update
-apt-get install -y --no-install-recommends \
-  build-essential cmake pkg-config git curl ca-certificates jq \
-  libboost-dev libevent-dev libsqlite3-dev \
-  python3 python3-zmq
-
-echo "[miner] Cloning + building btxd with CUDA backend (sm_${BTX_CUDA_ARCH})"
-mkdir -p /workspace
-cd /workspace
-[ -d /workspace/btx ] || git clone --depth 1 --branch main https://github.com/btxchain/btx.git
-cd /workspace/btx
-cmake -B build -DCMAKE_BUILD_TYPE=Release \
-  -DBTX_ENABLE_CUDA_EXPERIMENTAL=ON \
-  -DBTX_CUDA_ARCHITECTURES=${BTX_CUDA_ARCH} \
-  -DBTX_CUDA_RUNTIME_LIBRARY=Shared
-cmake --build build -j"$(nproc)"
-
-echo "[miner] Verifying CUDA backend"
-/workspace/btx/build/bin/btx-matmul-backend-info --backend cuda | head -15
-
-echo "[miner] Writing btx.conf"
-mkdir -p /workspace/.btx
-cat > /workspace/.btx/btx.conf <<EOF
-server=1
-listen=1
-dbcache=8192
-maxmempool=300
-maxconnections=64
-addnode=${HETZNER_PUBLIC_IP}:19335
-addnode=node.btx.tools:19335
-addnode=146.190.179.86:19335
-addnode=164.90.246.229:19335
-dnsseed=1
-fixedseeds=1
-EOF
-chmod 600 /workspace/.btx/btx.conf
-
-echo "[miner] Installing btxd wrapper (preserves BTX_MATMUL_BACKEND across supervisor restarts)"
-# CRITICAL: without this wrapper, the mining supervisor's auto-recovery restarts
-# silently fall back to CPU mining. See troubleshooting for full explanation.
-mkdir -p /workspace/btx/build/bin-wrapped
-cat > /workspace/btx/build/bin-wrapped/btxd <<'WRAPPER'
-#!/bin/bash
-exec env BTX_MATMUL_BACKEND=cuda CUDA_VISIBLE_DEVICES=0 /workspace/btx/build/bin/btxd "$@"
-WRAPPER
-chmod +x /workspace/btx/build/bin-wrapped/btxd
-
-echo "[miner] Starting btxd via wrapper"
-/workspace/btx/build/bin-wrapped/btxd -datadir=/workspace/.btx -daemon
-sleep 15
-/workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx getblockchaininfo | jq '.blocks, .headers'
-
-echo "[miner] Verifying CUDA env on running btxd"
-BTXD_PID=$(pgrep btxd | head -1)
-tr '\0' '\n' < /proc/$BTXD_PID/environ | grep -q '^BTX_MATMUL_BACKEND=cuda$' \
-  && echo "  ✓ CUDA env confirmed" \
-  || { echo "  ✗ FATAL: wrapper failed, btxd is on CPU"; exit 1; }
-
-echo "[miner] Launching mining supervisor (--daemon=wrapper for restart-safety)"
-echo "${BTX_REWARD_ADDRESS}" > /workspace/.btx/reward-address.txt
-export PATH=/workspace/btx/build/bin:$PATH
-BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
-nohup /workspace/btx/contrib/mining/start-live-mining.sh \
-  --datadir=/workspace/.btx \
-  --address-file=/workspace/.btx/reward-address.txt \
-  > /workspace/.btx/mining.log 2>&1 &
-
-echo "============================================================"
-echo "Miner setup complete. Tail with: tail -f /workspace/.btx/mining.log"
-echo "============================================================"
-```
+**Weekly:** confirm the Vast box hasn't been rebooted into idleness (`pgrep -f matador-miner` on the box), and re-run the `scantxoutset` payout check.
 
 ---
 
 ## Troubleshooting cookbook
 
-### "SSH session keeps dropping right away"
-Vast's default SSH wraps in `tmux attach` which exits if no session exists. Always use:
-```bash
-ssh -t -p <port> root@<ip> "tmux attach -t btx || tmux new -s btx"
-```
+### Pool-mode issues (current path)
 
-### "Commands seem to do nothing"
-User likely pasted commands BEFORE the SSH connection fully opened. Local Mac doesn't have `/workspace` or btxd. Confirm they're at the remote prompt `root@C.XXXXX:/workspace$` before pasting.
+**"Miner stopped after the Vast host rebooted"**
+`/root/onstart.sh` should relaunch it automatically (the bootstrap writes it). If the box predates that: `bash /root/run-matador.sh` won't be running — `nohup bash /root/run-matador.sh > /root/matador.log 2>&1 &` and then install the onstart guard from the bootstrap script. **Check for this after every host reboot** — an idle box bills the same as a mining one.
 
-### "fatal: Remote branch master not found"
-Default BTX branch is `main`. Use `BTX_REF=main` env var with the setup script.
+**"No shares accepted / 'authorization failed'"**
+Almost always a malformed `--payoutaddress`. Verify the `btx1…` string character-for-character. Second cause: pool endpoint down — the supervisor fails over to the second pool automatically; check `matador.log` for which pool it's on.
 
-### "GPG signature verification failed"
-BTX dev signing key (fingerprint `4204C1DD9BC1F6E65893653AE8EBF01F15A88DC4`) isn't on public keyservers. Fetch from release page:
-```bash
-curl -fsSL https://github.com/btxchain/btx/releases/download/v0.30.0/BTX-RELEASE-PUBKEY.asc -o /tmp/btx-pubkey.asc
-sudo -u btx gpg --import /tmp/btx-pubkey.asc
-```
+**"GPU at ~70W, util ~0%, but matador-miner is running"**
+Miner lost the CUDA context (host GPU issue) or is stuck reconnecting. Restart the supervisor: `pkill -f matador-miner; sleep 2` (the run-loop relaunches it). If wattage stays low, destroy + re-rent — box cost is zero in pool mode.
 
-### "could not load BTX shielded snapshot section"
-Known upstream bug — fixed in v0.30.0+. If they're seeing it on an older build, either rebuild from main or skip snapshot loading entirely (plain IBD works).
+**"Pool dashboard shows earnings but my wallet shows nothing"**
+Payouts are **batched per pay period** — days can pass between "earned" and "paid." Verify with `scantxoutset` (Phase 3C), not just wallet balance: if the wallet node is behind or on the wrong chain, the wallet can't see coins that DO exist. If `scantxoutset` on a **synced, canonical** node shows nothing new well past a pay period, stop pointing hashrate at that pool and escalate.
 
-### "Disk space is too low" on Vast
-Container Size was set < 100GB at rent time. Solution: destroy and re-rent with 100GB. (Cannot resize live.)
+**"My node is stuck at block ~125,600"**
+It's on the June 2026 dead fork (pre-v0.32 consensus rules). Fix: stop btxd, rebuild from current `main` (`cd ~/btx && git fetch && git checkout main && git pull`, then re-run the cmake build), restart, and let it reorg/resync. Coins received at heights below the ~125,000 divergence are typically intact on the canonical chain — verify with `scantxoutset` on the synced node before panicking. Coins "mined" on the dead fork after the divergence never existed canonically.
 
-### "CUDA oracle acceleration is unavailable on this build"
-`BTX_ENABLE_CUDA_EXPERIMENTAL=ON` wasn't passed to cmake. Rebuild with it.
+### Infrastructure issues (both paths)
 
-### "0 peers, mining paused, chain_guard insufficient_peer_consensus"
-`listen=0` in btx.conf can cause peer isolation. Edit btx.conf to `listen=1` and restart btxd.
+**"SSH session keeps dropping right away"**
+Vast's default SSH wraps in `tmux attach` which exits if no session exists. Always: `ssh -t -p <port> root@<ip> "tmux attach -t btx || tmux new -s btx"`
 
-### "Vast instance shows 'Running' but SSH/Open both fail"
-Zombie state. Destroy + re-rent on a different host (note the host_id you avoid). If this happens repeatedly, **switch to RunPod Secure Cloud** — the Vast P2P marketplace has empirically high failure rates for sustained mining workloads.
+**"Commands seem to do nothing"**
+User pasted before the SSH connection opened — they ran it on their laptop. Confirm they see the remote prompt before pasting.
 
-### "Vast instance hits 'retries exceeded' after 1-3 days"
-Container infrastructure failure. Vast hosts can't sustain 24/7 100% GPU at high power. Same fix: switch to RunPod Secure Cloud (datacenter Tier 3/4 hosts).
+**"Vast instance shows 'Running' but SSH/Open both fail"**
+Zombie state. Destroy + re-rent on a different host (note the avoided host_id). Costs nothing in pool mode.
 
-### "Two btxd instances fill 100GB disk"
-Each btxd's full chain state is ~50GB. Two btxd's = >100GB → disk full. Fix: use `--preset miner` for the second btxd, which prunes block storage (~5-10GB per instance). Or rent a pod with 200GB+ disk.
+**"GPU stuck at 100% util / ~115W after the mining process died"**
+CUDA context not released. Reboot the instance via web UI (`kill -9` won't free it). On owned hardware: `sudo nvidia-smi --gpu-reset`.
 
-### "Peer count drops to 1 and stays there, peers keep connecting then disconnecting in debug.log"
-Container network layer broken (we hit this on Vast). Peers connect (visible in debug.log as "New peer X connected") but never accumulate in getconnectioncount. Fix: destroy the instance, switch providers.
+### Wallet-node issues
 
-### "GPU 1 stuck at 100% util / ~115W after btxd died"
-CUDA context not released by dead btxd. Reboot the instance via web UI (kill -9 won't release the GPU context). On owned hardware, `sudo nvidia-smi --gpu-reset` works.
+**"fatal: Remote branch master not found"**
+Default BTX branch is `main`. Use `BTX_REF=main` with the setup script.
 
-### "Mining supervisor restarts btxd without preserving env vars" (now fixed by default)
-**This used to silently drop the user into CPU mining after the first chain_guard auto-recovery — costing real money for zero hashrate.** The fix is now baked into all bootstrap scripts and the one-shot build block above: a wrapper at `/workspace/btx/build/bin-wrapped/btxd` sets `BTX_MATMUL_BACKEND=cuda` and `CUDA_VISIBLE_DEVICES=0` before exec'ing the real btxd. The mining supervisor's `--daemon` flag points at the wrapper, so every restart preserves the env.
+**"GPG signature verification failed" (faststart)**
+The signing key isn't on public keyservers, and note the release key **changed undocumented in June 2026**. The safe path is what the script already does: fall back to building/syncing from source. Don't chase binary signatures.
 
-**If you're upgrading from a pre-wrapper bootstrap, retrofit:**
-```bash
-# 1. Install wrapper
-mkdir -p /workspace/btx/build/bin-wrapped
-cat > /workspace/btx/build/bin-wrapped/btxd <<'WRAPPER'
-#!/bin/bash
-exec env BTX_MATMUL_BACKEND=cuda CUDA_VISIBLE_DEVICES=0 /workspace/btx/build/bin/btxd "$@"
-WRAPPER
-chmod +x /workspace/btx/build/bin-wrapped/btxd
+**"Hetzner wallet not loaded after restart"**
+Add `wallet=miner-rewards` to `/home/btx/.btx/btx.conf` (the setup script does this; older setups may lack it).
 
-# 2. Stop supervisor + btxd
-pkill -f live-mining-loop.sh
-/workspace/btx/build/bin/btx-cli -datadir=/workspace/.btx stop
-sleep 5
+**"0 peers / chain_guard insufficient_peer_consensus"**
+`listen=0` in btx.conf can cause peer isolation. Set `listen=1`, restart btxd.
 
-# 3. Restart via wrapper + supervisor pointed at wrapper
-/workspace/btx/build/bin-wrapped/btxd -daemon -datadir=/workspace/.btx
-sleep 10
-BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin-wrapped/btxd \
-nohup /workspace/btx/contrib/mining/start-live-mining.sh \
-  --datadir=/workspace/.btx \
-  --address-file=/workspace/.btx/reward-address.txt \
-  > /workspace/.btx/mining.log 2>&1 &
-```
+### Legacy solo-mining issues
 
-**Detection: how to know you're stuck in CPU mode**
-```bash
-# 1. GPU power should be 400-500W when actively mining, 70W idle. Sustained 70W = CPU mode.
-nvidia-smi --query-gpu=power.draw --format=csv,noheader
-# 2. btxd's environment must have BTX_MATMUL_BACKEND=cuda
-tr '\0' '\n' < /proc/$(pgrep btxd)/environ | grep BTX_MATMUL
-# 3. Supervisor must be using the wrapper
-ps -o cmd= -p $(pgrep -f live-mining-loop) | tr ' ' '\n' | grep daemon=
-# Expected: --daemon=/workspace/btx/build/bin-wrapped/btxd
-```
-
-### "Hetzner wallet not loaded after restart"
-Add `wallet=miner-rewards` to `/home/btx/.btx/btx.conf` to auto-load on startup.
-
-### "Mining log says 'Missing required command: btx-cli'"
-Mining supervisor can't find btx-cli on PATH. Restart with explicit env vars:
-```bash
-BTX_MINING_CLI=/workspace/btx/build/bin/btx-cli \
-BTX_MINING_DAEMON=/workspace/btx/build/bin/btxd \
-nohup /workspace/btx/contrib/mining/start-live-mining.sh \
-  --datadir=/workspace/.btx \
-  --address-file=/workspace/.btx/reward-address.txt \
-  > /workspace/.btx/mining.log 2>&1 &
-```
+The original solo path (btxd + CUDA backend + live-mining supervisor on the GPU box) is preserved in `runpod-bootstrap.sh` / `vast-miner-bootstrap.sh` / `garage-rig-setup.sh`. **Do not run it on cloud containers** — NAT'd boxes orphan the large majority of found blocks (measured: 3 of 4 lost), which silently converts "20 BTX found!" into nothing. It remains viable only on hardware with real inbound connectivity (port-forwarded home/colo). If a user insists on solo, the load-bearing gotchas are: `BTX_ENABLE_CUDA_EXPERIMENTAL=ON` at cmake time; correct `BTX_CUDA_ARCHITECTURES` (89=4090, 120=5090, 86=3090); 100GB+ disk; `listen=1`; and the btxd env wrapper so supervisor restarts don't silently fall back to CPU mining (sustained ~70W GPU draw = CPU mode = burning money). Full details live in the legacy scripts' comments and this repo's git history.
 
 ---
 
 ## When to escalate to a human
 
-If any of these happen, the user should pause and seek help (community forum, GitHub issue, or someone with hands-on experience) rather than continue Claude-only:
-
-1. **Charges hitting credit card unexpectedly** — billing question, needs human review
-2. **Vast keeps zombie-ing repeatedly** — pattern suggests infrastructure issue, may need to switch providers
-3. **First block not found after 7 days** — could be hashrate issue, wallet config error, or chain divergence; needs hands-on debugging
-4. **Wallet balance unexpectedly goes down** — should never happen with coinbase rewards; investigate immediately
-5. **Mining works but they want to scale beyond 2 GPUs** — economics shift; benefit from human strategy conversation
-6. **They want to add a garage rig** — physical hardware setup is a different packet entirely
+1. **Charges hitting the credit card unexpectedly** — billing question, needs human review
+2. **Pool "pays" but `scantxoutset` on a synced canonical node shows nothing for 2+ pay periods** — possible pool problem; stop hashing there, ask in community channels
+3. **Signature/key anomalies during any install** — given the June rotation, never "work around" a failed verification silently
+4. **Wallet balance unexpectedly goes down** — should never happen; investigate immediately
+5. **They want to scale beyond 1-2 GPUs** — economics + risk conversation, not a setup task. Given the chain's June 2026 events and zero liquidity, more capital needs more conviction than a playbook can supply
+6. **They want a garage rig** — physical hardware is a different project entirely
 
 ---
 
 ## What success looks like
 
-After ~3 days of following this packet:
-- Hetzner CPX41 running 24/7, fully synced
-- Vast.ai instance running, GPU at >50% utilization when not paused
-- First block found, 20 BTX in Hetzner wallet
-- Dashboard showing positive economics at spot model price
-- User comfortable checking status independently and replacing Vast instances when needed
+After day 1:
+- Hetzner node syncing (or synced), wallet backed up off-box
+- Vast box hashing at full GPU power, shares accepted, reboot-proofed
+- User can read `matador.log` and pool stats themselves
 
-After 60 days:
-- ~50-500 BTX accumulated (depending on hashrate share + variance)
-- Real data on cost-per-BTX-mined vs network growth
-- Informed decision point: continue/scale/exit
+After the first pay period:
+- Payout independently verified on-chain via `scantxoutset` — not just trusted from the pool dashboard
+
+After 30-60 days:
+- Real cost-per-BTX data
+- An informed continue/scale/exit decision — made against the honest backdrop that the coins remain unsellable until a market exists
 
 ---
 
 ## Tone & posture for Claude
 
-- **Patient** — laypeople will paste commands wrong, lose SSH sessions, forget to set env vars. Don't sigh. Walk them through it again.
+- **Patient** — laypeople paste commands wrong, lose SSH sessions, typo addresses. Don't sigh. Walk them through again.
 - **Anti-condescending** — explain WHY when something matters, don't just give commands.
-- **Confirm at checkpoints** — "Tell me what you see at the prompt before continuing."
-- **Catch errors before they happen** — when about to do something error-prone (rent Vast without setting disk size, paste a command before SSH connects), preemptively warn.
-- **Honest about uncertainty** — when the user asks "will I make money," the answer is "no idea — this is a speculative bet on a chain with no market yet."
-- **Stop and ask** when the user's intent diverges from this packet (e.g., wants to use a different provider, wants to mine on a 3070 — push back, explain why this packet's choices are recommended).
-
-If the user starts deviating significantly from this packet's setup, gently redirect them. The packet is opinionated for good reasons — every deviation increases failure risk, and the troubleshooting cookbook below only applies to the documented path.
+- **Confirm at checkpoints** — "Tell me what you see at the prompt before continuing." The payout address deserves a full read-back.
+- **Catch errors before they happen** — warn preemptively at the error-prone steps (address entry, pasting before SSH connects).
+- **Honest about uncertainty** — "will I make money" → "no idea; no market exists, and the June 2026 events are unresolved risk."
+- **Don't bury the risk section** — if the user skipped the READ FIRST block, bring them back to it before any money is spent.
+- **Stop and redirect** if they deviate significantly (different pool, solo on cloud, weird GPU). The packet is opinionated for documented reasons; the cookbook only covers the documented path.
 
 ---
 
 ## Files referenced (provide alongside this packet)
 
-1. `cloud-node-setup.sh` — Hetzner setup script (paste into Ubuntu 24.04)
-2. `vast-miner-bootstrap.sh` — Vast setup (or use the inline build block above)
-3. `dashboard.sh` — local monitoring tool
-4. (Optional) `garage-rig-setup.sh` — for the small number of users who want to build owned hardware later
+1. `vast-pool-bootstrap.sh` — pool miner bootstrap (**the current path**)
+2. `cloud-node-setup.sh` — Hetzner wallet-node setup
+3. `dashboard.sh` — local monitoring (wallet side current; GPU panels are solo-era)
+4. `runpod-bootstrap.sh`, `vast-miner-bootstrap.sh`, `garage-rig-setup.sh` — legacy solo path
 
 All available in this repo alongside this packet.
