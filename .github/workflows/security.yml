@@ -29,6 +29,8 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/gitleaks-bin"
           tar -xzf "$archive" -C "${RUNNER_TEMP}/gitleaks-bin" gitleaks
           printf '[extend]\nuseDefault = true\n' > "${RUNNER_TEMP}/gitleaks-default.toml"
+          mkdir -p "${RUNNER_TEMP}/gitleaks-config"
+          : > "${RUNNER_TEMP}/gitleaks-config/.gitleaksignore"
       - name: Reject secrets introduced by this change
         shell: bash
         env:
@@ -51,5 +53,5 @@ jobs:
           fi
           "${RUNNER_TEMP}/gitleaks-bin/gitleaks" git --redact=100 --no-banner \
             --config="${RUNNER_TEMP}/gitleaks-default.toml" \
-            --gitleaks-ignore-path=/dev/null --ignore-gitleaks-allow \
-            --log-opts="$range" .
+            --gitleaks-ignore-path="${RUNNER_TEMP}/gitleaks-config/.gitleaksignore" --ignore-gitleaks-allow \
+            --log-opts="$range" "$(git rev-parse --absolute-git-dir)"
